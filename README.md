@@ -35,6 +35,7 @@ Copy `.env.example` rather than committing secrets. This milestone has no API ke
 uvicorn macro_desk.main:app --reload
 ```
 
+- `GET /` — read-only homepage of documents first seen in the last 24 hours
 - `GET /health` — liveness
 - `GET /documents?limit=50` — stored documents, newest first
 - `GET /documents?category=Payments` — same list, filtered by taxonomy category

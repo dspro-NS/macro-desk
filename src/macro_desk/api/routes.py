@@ -4,8 +4,10 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
+from macro_desk.api.home import render_home
 from macro_desk.db.repository import DocumentRepository, connect, initialize
 from macro_desk.domain.taxonomy import TAXONOMY_VALUES
 from macro_desk.ingestion.pipeline import ingest_configured_feeds
@@ -75,6 +77,20 @@ class ChangesResponse(BaseModel):
 @router.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse(status="ok")
+
+
+@router.get("/", response_class=HTMLResponse)
+def home(request: Request) -> HTMLResponse:
+    hours = 24
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    settings = request.app.state.settings
+    connection = connect(settings.database_path)
+    try:
+        initialize(connection)
+        documents = DocumentRepository(connection).list_first_seen_since(since, limit=50)
+    finally:
+        connection.close()
+    return HTMLResponse(render_home(documents, hours=hours))
 
 
 @router.get("/documents", response_model=DocumentListResponse)
