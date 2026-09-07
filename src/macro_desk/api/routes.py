@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from macro_desk.api.home import render_home
 from macro_desk.db.repository import DocumentRepository, connect, initialize
+from macro_desk.domain.importance import IMPORTANCE_VALUES
 from macro_desk.domain.taxonomy import TAXONOMY_VALUES
 from macro_desk.ingestion.pipeline import ingest_configured_feeds
 from macro_desk.ingestion.sources import DOCUMENT_TYPE_VALUES
@@ -31,6 +32,8 @@ class DocumentSummary(BaseModel):
     content_hash: str
     category: str
     classification_reason: str
+    importance: str
+    importance_reason: str
     created_at: datetime
     clean_text: str
 
@@ -87,7 +90,11 @@ def home(request: Request) -> HTMLResponse:
     connection = connect(settings.database_path)
     try:
         initialize(connection)
-        documents = DocumentRepository(connection).list_first_seen_since(since, limit=50)
+        documents = DocumentRepository(connection).list_first_seen_since(
+            since,
+            limit=50,
+            rank_by_importance=True,
+        )
     finally:
         connection.close()
     return HTMLResponse(render_home(documents, hours=hours))
@@ -99,6 +106,7 @@ def list_documents(
     limit: int = Query(default=50, ge=1, le=200),
     category: Optional[str] = Query(default=None),
     document_type: Optional[str] = Query(default=None),
+    importance: Optional[str] = Query(default=None),
 ) -> DocumentListResponse:
     if category is not None and category not in TAXONOMY_VALUES:
         raise HTTPException(
@@ -110,6 +118,11 @@ def list_documents(
             status_code=400,
             detail="Unknown document_type. Use one of: {}".format(", ".join(DOCUMENT_TYPE_VALUES)),
         )
+    if importance is not None and importance not in IMPORTANCE_VALUES:
+        raise HTTPException(
+            status_code=400,
+            detail="Unknown importance. Use one of: {}".format(", ".join(IMPORTANCE_VALUES)),
+        )
     settings = request.app.state.settings
     connection = connect(settings.database_path)
     try:
@@ -118,6 +131,7 @@ def list_documents(
             limit=limit,
             category=category,
             document_type=document_type,
+            importance=importance,
         )
     finally:
         connection.close()
@@ -134,6 +148,8 @@ def list_documents(
                 content_hash=item.content_hash,
                 category=item.category,
                 classification_reason=item.classification_reason,
+                importance=item.importance,
+                importance_reason=item.importance_reason,
                 created_at=item.created_at,
                 clean_text=item.clean_text,
             )

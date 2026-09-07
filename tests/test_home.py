@@ -81,3 +81,38 @@ def test_home_shows_speech_source_and_link(settings: Settings) -> None:
     assert "RBI Speeches" in html
     assert "https://www.rbi.org.in/scripts/BS_SpeechesView.aspx?id=1575" in html
     assert "RBI source" in html
+
+
+def test_home_lists_high_importance_before_newer_low_items(settings: Settings) -> None:
+    now = datetime.now(timezone.utc)
+    connection = connect(settings.database_path)
+    try:
+        initialize(connection)
+        repository = DocumentRepository(connection)
+        repository.insert(
+            make_document(
+                title="Result of Variable Rate Repo Auction",
+                source_url="https://www.rbi.org.in/pr?id=low-home",
+                content_hash="31" + "a" * 62,
+            ),
+            created_at=now - timedelta(hours=1),
+        )
+        repository.insert(
+            make_document(
+                title="Minutes of the Monetary Policy Committee Meeting",
+                clean_text="The MPC kept the policy repo rate unchanged.",
+                source_url="https://www.rbi.org.in/pr?id=high-home",
+                content_hash="32" + "a" * 62,
+            ),
+            created_at=now - timedelta(hours=8),
+        )
+    finally:
+        connection.close()
+
+    html = TestClient(create_app(settings)).get("/").text
+    high_at = html.find("Monetary Policy Committee")
+    low_at = html.find("Variable Rate Repo Auction")
+    assert high_at != -1 and low_at != -1
+    assert high_at < low_at
+    assert "high" in html
+    assert "low" in html

@@ -9,6 +9,7 @@ from macro_desk.config import Settings
 from macro_desk.db.repository import DocumentRepository
 from macro_desk.domain.classification import DocumentClassifier, classify_document
 from macro_desk.domain.hashing import compute_content_hash, normalize_whitespace
+from macro_desk.domain.importance import DocumentImportanceRanker, rank_importance
 from macro_desk.domain.models import NewDocument
 from macro_desk.domain.text import html_to_text
 from macro_desk.ingestion.client import FeedClient, FeedFetchError
@@ -43,6 +44,7 @@ def ingest_feed(
     feed: FeedSpec,
     fetch: Optional[FetchFn] = None,
     classifier: Optional[DocumentClassifier] = None,
+    ranker: Optional[DocumentImportanceRanker] = None,
 ) -> IngestResult:
     """Idempotent ingest of one official RSS feed.
 
@@ -79,7 +81,7 @@ def ingest_feed(
     result.fetched = len(items)
     for item in items:
         try:
-            _persist_item(feed, repository, item, result, classifier)
+            _persist_item(feed, repository, item, result, classifier, ranker)
         except Exception as exc:
             logger.exception("Failed to persist %s", item.source_url)
             result.failed += 1
@@ -101,6 +103,7 @@ def ingest_configured_feeds(
     repository: DocumentRepository,
     fetch: Optional[FetchFn] = None,
     classifier: Optional[DocumentClassifier] = None,
+    ranker: Optional[DocumentImportanceRanker] = None,
 ) -> IngestResult:
     """Ingest each configured official feed sequentially, one GET per feed."""
     started_at = datetime.now(timezone.utc)
@@ -113,6 +116,7 @@ def ingest_configured_feeds(
                 feed,
                 fetch=fetch,
                 classifier=classifier,
+                ranker=ranker,
             )
         )
     repository.record_ingest_run(
@@ -132,6 +136,7 @@ def ingest_rbi_press_releases(
     repository: DocumentRepository,
     fetch: Optional[FetchFn] = None,
     classifier: Optional[DocumentClassifier] = None,
+    ranker: Optional[DocumentImportanceRanker] = None,
 ) -> IngestResult:
     """Backward-compatible helper for the press-release feed only."""
     press_release_feed = configured_feeds(settings)[0]
@@ -141,6 +146,7 @@ def ingest_rbi_press_releases(
         press_release_feed,
         fetch=fetch,
         classifier=classifier,
+        ranker=ranker,
     )
 
 
@@ -150,6 +156,7 @@ def _persist_item(
     item,
     result: IngestResult,
     classifier: Optional[DocumentClassifier],
+    ranker: Optional[DocumentImportanceRanker],
 ) -> None:
     clean_text = html_to_text(item.raw_text) or normalize_whitespace(item.title)
     content_hash = compute_content_hash(item.title, clean_text)
@@ -160,6 +167,7 @@ def _persist_item(
         return
 
     classification = classify_document(item.title, clean_text, classifier=classifier)
+    importance = rank_importance(item.title, clean_text, ranker=ranker)
     document = NewDocument(
         title=normalize_whitespace(item.title),
         published_at=parse_pub_date(item.published_at),
@@ -171,6 +179,8 @@ def _persist_item(
         content_hash=content_hash,
         category=classification.category,
         classification_reason=classification.reason,
+        importance=importance.importance,
+        importance_reason=importance.reason,
     )
     stored = repository.insert(document)
     if stored is None:

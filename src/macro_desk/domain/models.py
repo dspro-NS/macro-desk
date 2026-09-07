@@ -19,6 +19,8 @@ class Document(BaseModel):
     content_hash: str
     category: str
     classification_reason: str
+    importance: str
+    importance_reason: str
     created_at: datetime
     id: Optional[int] = None
 
@@ -36,6 +38,8 @@ class NewDocument(BaseModel):
     content_hash: str = Field(min_length=1)
     category: str = Field(min_length=1)
     classification_reason: str = Field(min_length=1)
+    importance: str = Field(min_length=1)
+    importance_reason: str = Field(min_length=1)
 
 
 class IngestRun(BaseModel):

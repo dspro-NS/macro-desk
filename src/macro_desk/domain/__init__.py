@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from macro_desk.domain.classification import ClassificationResult, classify_document
 from macro_desk.domain.hashing import compute_content_hash, normalize_whitespace
+from macro_desk.domain.importance import ImportanceResult, rank_importance
 from macro_desk.domain.models import Document, IngestRun, NewDocument
 from macro_desk.domain.taxonomy import Category
 from macro_desk.domain.text import html_to_text
@@ -10,10 +11,12 @@ __all__ = [
     "Category",
     "ClassificationResult",
     "Document",
+    "ImportanceResult",
     "IngestRun",
     "NewDocument",
     "classify_document",
     "compute_content_hash",
     "html_to_text",
     "normalize_whitespace",
+    "rank_importance",
 ]

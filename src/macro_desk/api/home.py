@@ -101,12 +101,13 @@ def _render_item(document: Document) -> str:
     title = escape(document.title)
     source = escape(document.source)
     category = escape(document.category)
+    importance = escape(document.importance)
     published = escape(document.published_at.date().isoformat())
     url = escape(document.source_url, quote=True)
     return (
         "<li>"
         '<a class="title" href="{url}">{title}</a>'
-        '<p class="meta">{source} · {category} · {published}'
+        '<p class="meta">{source} · {category} · {importance} · {published}'
         ' · <a class="source-link" href="{url}">RBI source</a></p>'
         "</li>"
     ).format(
@@ -114,5 +115,6 @@ def _render_item(document: Document) -> str:
         title=title,
         source=source,
         category=category,
+        importance=importance,
         published=published,
     )

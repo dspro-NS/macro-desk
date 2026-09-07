@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from macro_desk.domain.classification import classify_document
+from macro_desk.domain.importance import rank_importance
 from macro_desk.domain.models import Document, IngestRun, NewDocument
 
 SCHEMA = """
@@ -22,6 +23,8 @@ CREATE TABLE IF NOT EXISTS documents (
     content_hash TEXT NOT NULL,
     category TEXT NOT NULL,
     classification_reason TEXT NOT NULL,
+    importance TEXT NOT NULL,
+    importance_reason TEXT NOT NULL,
     created_at TEXT NOT NULL,
     UNIQUE (source_url),
     UNIQUE (content_hash)
@@ -48,6 +51,9 @@ CREATE INDEX IF NOT EXISTS idx_documents_published_at
 CREATE INDEX IF NOT EXISTS idx_documents_document_type
     ON documents (document_type);
 
+CREATE INDEX IF NOT EXISTS idx_documents_importance
+    ON documents (importance);
+
 CREATE INDEX IF NOT EXISTS idx_documents_created_at
     ON documents (created_at DESC);
 
@@ -68,8 +74,10 @@ def initialize(connection: sqlite3.Connection) -> None:
     connection.executescript(SCHEMA)
     connection.executescript(INGEST_RUN_SCHEMA)
     _ensure_classification_columns(connection)
+    _ensure_importance_columns(connection)
     connection.executescript(INDEXES)
     _backfill_classifications(connection)
+    _backfill_importance(connection)
     connection.commit()
 
 
@@ -83,6 +91,35 @@ def _ensure_classification_columns(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE documents ADD COLUMN category TEXT")
     if "classification_reason" not in columns:
         connection.execute("ALTER TABLE documents ADD COLUMN classification_reason TEXT")
+
+
+def _ensure_importance_columns(connection: sqlite3.Connection) -> None:
+    columns = _table_columns(connection)
+    if "importance" not in columns:
+        connection.execute("ALTER TABLE documents ADD COLUMN importance TEXT")
+    if "importance_reason" not in columns:
+        connection.execute("ALTER TABLE documents ADD COLUMN importance_reason TEXT")
+
+
+def _backfill_importance(connection: sqlite3.Connection) -> None:
+    rows = connection.execute(
+        """
+        SELECT id, title, clean_text
+        FROM documents
+        WHERE importance IS NULL OR importance = ''
+           OR importance_reason IS NULL OR importance_reason = ''
+        """
+    ).fetchall()
+    for row in rows:
+        result = rank_importance(row["title"], row["clean_text"])
+        connection.execute(
+            """
+            UPDATE documents
+            SET importance = ?, importance_reason = ?
+            WHERE id = ?
+            """,
+            (result.importance, result.reason, row["id"]),
+        )
 
 
 def _backfill_classifications(connection: sqlite3.Connection) -> None:
@@ -126,6 +163,8 @@ def _row_to_document(row: sqlite3.Row) -> Document:
         content_hash=row["content_hash"],
         category=row["category"],
         classification_reason=row["classification_reason"],
+        importance=row["importance"],
+        importance_reason=row["importance_reason"],
         created_at=_parse_datetime(row["created_at"]),
     )
 
@@ -163,8 +202,8 @@ class DocumentRepository:
                 INSERT INTO documents (
                     title, published_at, source, source_url, document_type,
                     raw_text, clean_text, content_hash, category,
-                    classification_reason, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    classification_reason, importance, importance_reason, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     document.title,
@@ -177,6 +216,8 @@ class DocumentRepository:
                     document.content_hash,
                     document.category,
                     document.classification_reason,
+                    document.importance,
+                    document.importance_reason,
                     created.isoformat(),
                 ),
             )
@@ -211,6 +252,7 @@ class DocumentRepository:
         limit: int = 50,
         category: Optional[str] = None,
         document_type: Optional[str] = None,
+        importance: Optional[str] = None,
     ) -> list[Document]:
         clauses = []
         params: list[object] = []
@@ -220,6 +262,9 @@ class DocumentRepository:
         if document_type:
             clauses.append("document_type = ?")
             params.append(document_type)
+        if importance:
+            clauses.append("importance = ?")
+            params.append(importance)
         where = "WHERE {}".format(" AND ".join(clauses)) if clauses else ""
         params.append(limit)
         rows: Iterable[sqlite3.Row] = self._connection.execute(
@@ -233,15 +278,26 @@ class DocumentRepository:
         ).fetchall()
         return [_row_to_document(row) for row in rows]
 
-    def list_first_seen_since(self, since: datetime, limit: int = 200) -> list[Document]:
+    def list_first_seen_since(
+        self,
+        since: datetime,
+        limit: int = 200,
+        rank_by_importance: bool = False,
+    ) -> list[Document]:
         """Documents whose first insert time falls on or after ``since``."""
+        order = "created_at DESC, id DESC"
+        if rank_by_importance:
+            order = (
+                "CASE importance WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, "
+                "created_at DESC, id DESC"
+            )
         rows: Iterable[sqlite3.Row] = self._connection.execute(
             """
             SELECT * FROM documents
             WHERE created_at >= ?
-            ORDER BY created_at DESC, id DESC
+            ORDER BY {}
             LIMIT ?
-            """,
+            """.format(order),
             (since.isoformat(), limit),
         ).fetchall()
         return [_row_to_document(row) for row in rows]

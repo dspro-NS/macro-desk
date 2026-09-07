@@ -142,3 +142,43 @@ def test_unknown_document_type_filter_is_rejected(settings: Settings) -> None:
     assert response.status_code == 400
     assert "Unknown document_type" in response.json()["detail"]
 
+
+def test_documents_can_be_filtered_by_importance(settings: Settings) -> None:
+    connection = connect(settings.database_path)
+    try:
+        initialize(connection)
+        repository = DocumentRepository(connection)
+        repository.insert(
+            make_document(
+                title="Minutes of the Monetary Policy Committee Meeting",
+                clean_text="The MPC kept the policy repo rate unchanged.",
+                source_url="https://www.rbi.org.in/pr?id=50",
+                content_hash="21" + "a" * 62,
+            )
+        )
+        repository.insert(
+            make_document(
+                title="Result of Variable Rate Repo Auction",
+                source_url="https://www.rbi.org.in/pr?id=51",
+                content_hash="22" + "a" * 62,
+            )
+        )
+    finally:
+        connection.close()
+
+    client = TestClient(create_app(settings))
+    response = client.get("/documents", params={"importance": "high"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 1
+    assert "Monetary Policy Committee" in body["items"][0]["title"]
+    assert body["items"][0]["importance"] == "high"
+    assert body["items"][0]["importance_reason"]
+
+
+def test_unknown_importance_filter_is_rejected(settings: Settings) -> None:
+    client = TestClient(create_app(settings))
+    response = client.get("/documents", params={"importance": "critical"})
+    assert response.status_code == 400
+    assert "Unknown importance" in response.json()["detail"]
+

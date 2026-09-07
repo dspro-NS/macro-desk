@@ -36,17 +36,18 @@ Copy `.env.example` rather than committing secrets. This milestone has no API ke
 uvicorn macro_desk.main:app --reload
 ```
 
-- `GET /` — read-only homepage of documents first seen in the last 24 hours
+- `GET /` — read-only homepage of documents first seen in the last 24 hours (high importance first, then newest)
 - `GET /health` — liveness
 - `GET /documents?limit=50` — stored documents, newest first
 - `GET /documents?category=Payments` — same list, filtered by taxonomy category
 - `GET /documents?document_type=press_release` — press releases only
 - `GET /documents?document_type=notification` — notifications only
 - `GET /documents?document_type=speech` — speeches only
+- `GET /documents?importance=high` — filter by rule-based importance (`high`, `medium`, `low`)
 - `POST /ingest` — fetch each official RSS feed once and persist new items
 - `GET /changes?hours=24` — documents first seen in the window (default 24 hours), plus ingest runs in that window
 
-Categories are assigned with keyword rules on title and clean text (not an LLM). Each stored document includes `category` and `classification_reason`. The classifier is a single function, so it can be replaced later without changing storage or the API.
+Categories are assigned with keyword rules on title and clean text (not an LLM). Each stored document includes `category`, `classification_reason`, `importance`, and `importance_reason`. The classifier and importance ranker are single functions, so they can be replaced later without changing storage or the API.
 
 ## Run ingestion from the CLI
 

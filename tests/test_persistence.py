@@ -17,6 +17,8 @@ def test_insert_and_fetch_document(repository: DocumentRepository) -> None:
     assert fetched.source_url == stored.source_url
     assert fetched.category == stored.category
     assert fetched.classification_reason
+    assert fetched.importance == stored.importance
+    assert fetched.importance_reason
 
 
 def test_list_newest_can_filter_by_category(repository: DocumentRepository) -> None:
