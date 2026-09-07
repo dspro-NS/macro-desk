@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Callable, Optional
 
 from macro_desk.config import Settings
@@ -102,6 +103,7 @@ def ingest_configured_feeds(
     classifier: Optional[DocumentClassifier] = None,
 ) -> IngestResult:
     """Ingest each configured official feed sequentially, one GET per feed."""
+    started_at = datetime.now(timezone.utc)
     combined = IngestResult()
     for feed in configured_feeds(settings):
         combined.merge(
@@ -113,6 +115,15 @@ def ingest_configured_feeds(
                 classifier=classifier,
             )
         )
+    repository.record_ingest_run(
+        started_at=started_at,
+        finished_at=datetime.now(timezone.utc),
+        fetched=combined.fetched,
+        inserted=combined.inserted,
+        skipped=combined.skipped,
+        failed=combined.failed,
+        errors=combined.errors,
+    )
     return combined
 
 

@@ -41,6 +41,7 @@ uvicorn macro_desk.main:app --reload
 - `GET /documents?document_type=press_release` — press releases only
 - `GET /documents?document_type=notification` — notifications only
 - `POST /ingest` — fetch each official RSS feed once and persist new items
+- `GET /changes?hours=24` — documents first seen in the window (default 24 hours), plus ingest runs in that window
 
 Categories are assigned with keyword rules on title and clean text (not an LLM). Each stored document includes `category` and `classification_reason`. The classifier is a single function, so it can be replaced later without changing storage or the API.
 
@@ -53,6 +54,8 @@ python -m macro_desk.cli ingest
 Each run performs **one GET per configured official feed** (press releases, then notifications), with a timeout and a clear error log if a feed is blocked, times out, or is invalid XML. Item bodies are taken from the RSS `description` field. The pipeline does not scrape linked HTML pages and does not attempt to bypass access controls, CAPTCHAs, or anti-bot responses (including HTTP 401/403/418/429).
 
 Stored `source` is `RBI Press Releases` or `RBI Notifications`, and `document_type` is `press_release` or `notification`. Duplicates are skipped when the `source_url` or content hash already exists, including across feeds.
+
+`GET /changes` answers “what is new to this database?” using `created_at` (first insert), not RBI’s publication date. Each CLI/`POST /ingest` run is stored in `ingest_runs` with its timestamp and counts.
 
 ## Tests
 

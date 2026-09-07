@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Optional
 
 from macro_desk.domain.classification import classify_document
-from macro_desk.domain.models import Document, NewDocument
+from macro_desk.domain.models import Document, IngestRun, NewDocument
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS documents (
@@ -27,12 +28,31 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 """
 
+INGEST_RUN_SCHEMA = """
+CREATE TABLE IF NOT EXISTS ingest_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT NOT NULL,
+    fetched INTEGER NOT NULL,
+    inserted INTEGER NOT NULL,
+    skipped INTEGER NOT NULL,
+    failed INTEGER NOT NULL,
+    errors TEXT NOT NULL
+);
+"""
+
 INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_documents_published_at
     ON documents (published_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_documents_document_type
     ON documents (document_type);
+
+CREATE INDEX IF NOT EXISTS idx_documents_created_at
+    ON documents (created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ingest_runs_finished_at
+    ON ingest_runs (finished_at DESC);
 """
 
 
@@ -46,6 +66,7 @@ def connect(database_path: Path) -> sqlite3.Connection:
 
 def initialize(connection: sqlite3.Connection) -> None:
     connection.executescript(SCHEMA)
+    connection.executescript(INGEST_RUN_SCHEMA)
     _ensure_classification_columns(connection)
     connection.executescript(INDEXES)
     _backfill_classifications(connection)
@@ -106,6 +127,26 @@ def _row_to_document(row: sqlite3.Row) -> Document:
         category=row["category"],
         classification_reason=row["classification_reason"],
         created_at=_parse_datetime(row["created_at"]),
+    )
+
+
+def _row_to_ingest_run(row: sqlite3.Row) -> IngestRun:
+    raw_errors = row["errors"]
+    try:
+        errors = json.loads(raw_errors) if raw_errors else []
+    except json.JSONDecodeError:
+        errors = [raw_errors]
+    if not isinstance(errors, list):
+        errors = [str(errors)]
+    return IngestRun(
+        id=row["id"],
+        started_at=_parse_datetime(row["started_at"]),
+        finished_at=_parse_datetime(row["finished_at"]),
+        fetched=row["fetched"],
+        inserted=row["inserted"],
+        skipped=row["skipped"],
+        failed=row["failed"],
+        errors=[str(item) for item in errors],
     )
 
 
@@ -191,3 +232,67 @@ class DocumentRepository:
             params,
         ).fetchall()
         return [_row_to_document(row) for row in rows]
+
+    def list_first_seen_since(self, since: datetime, limit: int = 200) -> list[Document]:
+        """Documents whose first insert time falls on or after ``since``."""
+        rows: Iterable[sqlite3.Row] = self._connection.execute(
+            """
+            SELECT * FROM documents
+            WHERE created_at >= ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (since.isoformat(), limit),
+        ).fetchall()
+        return [_row_to_document(row) for row in rows]
+
+    def record_ingest_run(
+        self,
+        started_at: datetime,
+        finished_at: datetime,
+        fetched: int,
+        inserted: int,
+        skipped: int,
+        failed: int,
+        errors: Optional[list[str]] = None,
+    ) -> IngestRun:
+        cursor = self._connection.execute(
+            """
+            INSERT INTO ingest_runs (
+                started_at, finished_at, fetched, inserted, skipped, failed, errors
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                started_at.isoformat(),
+                finished_at.isoformat(),
+                fetched,
+                inserted,
+                skipped,
+                failed,
+                json.dumps(errors or []),
+            ),
+        )
+        self._connection.commit()
+        stored = self.get_ingest_run(cursor.lastrowid)
+        if stored is None:  # pragma: no cover
+            raise RuntimeError("Failed to persist ingest run")
+        return stored
+
+    def get_ingest_run(self, run_id: int) -> Optional[IngestRun]:
+        row = self._connection.execute(
+            "SELECT * FROM ingest_runs WHERE id = ?",
+            (run_id,),
+        ).fetchone()
+        return _row_to_ingest_run(row) if row else None
+
+    def list_ingest_runs_since(self, since: datetime, limit: int = 50) -> list[IngestRun]:
+        rows: Iterable[sqlite3.Row] = self._connection.execute(
+            """
+            SELECT * FROM ingest_runs
+            WHERE finished_at >= ?
+            ORDER BY finished_at DESC, id DESC
+            LIMIT ?
+            """,
+            (since.isoformat(), limit),
+        ).fetchall()
+        return [_row_to_ingest_run(row) for row in rows]
