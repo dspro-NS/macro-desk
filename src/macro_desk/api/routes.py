@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field
 
 from macro_desk.db.repository import DocumentRepository, connect, initialize
 from macro_desk.domain.taxonomy import TAXONOMY_VALUES
-from macro_desk.ingestion.pipeline import ingest_rbi_press_releases
+from macro_desk.ingestion.pipeline import ingest_configured_feeds
+from macro_desk.ingestion.sources import DOCUMENT_TYPE_VALUES
 
 router = APIRouter()
 
@@ -55,17 +56,27 @@ def list_documents(
     request: Request,
     limit: int = Query(default=50, ge=1, le=200),
     category: Optional[str] = Query(default=None),
+    document_type: Optional[str] = Query(default=None),
 ) -> DocumentListResponse:
     if category is not None and category not in TAXONOMY_VALUES:
         raise HTTPException(
             status_code=400,
             detail="Unknown category. Use one of: {}".format(", ".join(TAXONOMY_VALUES)),
         )
+    if document_type is not None and document_type not in DOCUMENT_TYPE_VALUES:
+        raise HTTPException(
+            status_code=400,
+            detail="Unknown document_type. Use one of: {}".format(", ".join(DOCUMENT_TYPE_VALUES)),
+        )
     settings = request.app.state.settings
     connection = connect(settings.database_path)
     try:
         initialize(connection)
-        items = DocumentRepository(connection).list_newest(limit=limit, category=category)
+        items = DocumentRepository(connection).list_newest(
+            limit=limit,
+            category=category,
+            document_type=document_type,
+        )
     finally:
         connection.close()
     return DocumentListResponse(
@@ -95,7 +106,7 @@ def ingest(request: Request) -> IngestResponse:
     connection = connect(settings.database_path)
     try:
         initialize(connection)
-        result = ingest_rbi_press_releases(settings, DocumentRepository(connection))
+        result = ingest_configured_feeds(settings, DocumentRepository(connection))
     finally:
         connection.close()
     return IngestResponse(

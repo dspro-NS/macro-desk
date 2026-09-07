@@ -31,8 +31,8 @@ INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_documents_published_at
     ON documents (published_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_documents_category
-    ON documents (category);
+CREATE INDEX IF NOT EXISTS idx_documents_document_type
+    ON documents (document_type);
 """
 
 
@@ -165,24 +165,29 @@ class DocumentRepository:
         ).fetchone()
         return row is not None
 
-    def list_newest(self, limit: int = 50, category: Optional[str] = None) -> list[Document]:
+    def list_newest(
+        self,
+        limit: int = 50,
+        category: Optional[str] = None,
+        document_type: Optional[str] = None,
+    ) -> list[Document]:
+        clauses = []
+        params: list[object] = []
         if category:
-            rows: Iterable[sqlite3.Row] = self._connection.execute(
-                """
-                SELECT * FROM documents
-                WHERE category = ?
-                ORDER BY published_at DESC, created_at DESC, id DESC
-                LIMIT ?
-                """,
-                (category, limit),
-            ).fetchall()
-        else:
-            rows = self._connection.execute(
-                """
-                SELECT * FROM documents
-                ORDER BY published_at DESC, created_at DESC, id DESC
-                LIMIT ?
-                """,
-                (limit,),
-            ).fetchall()
+            clauses.append("category = ?")
+            params.append(category)
+        if document_type:
+            clauses.append("document_type = ?")
+            params.append(document_type)
+        where = "WHERE {}".format(" AND ".join(clauses)) if clauses else ""
+        params.append(limit)
+        rows: Iterable[sqlite3.Row] = self._connection.execute(
+            """
+            SELECT * FROM documents
+            {}
+            ORDER BY published_at DESC, created_at DESC, id DESC
+            LIMIT ?
+            """.format(where),
+            params,
+        ).fetchall()
         return [_row_to_document(row) for row in rows]

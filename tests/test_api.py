@@ -62,3 +62,46 @@ def test_unknown_category_filter_is_rejected(settings: Settings) -> None:
     assert response.status_code == 400
     assert "Unknown category" in response.json()["detail"]
 
+
+def test_documents_can_be_filtered_by_document_type(settings: Settings) -> None:
+    connection = connect(settings.database_path)
+    try:
+        initialize(connection)
+        repository = DocumentRepository(connection)
+        repository.insert(
+            make_document(
+                title="Press item",
+                document_type="press_release",
+                source="RBI Press Releases",
+                source_url="https://www.rbi.org.in/pr?id=40",
+                content_hash="9" * 64,
+            )
+        )
+        repository.insert(
+            make_document(
+                title="Notification item",
+                document_type="notification",
+                source="RBI Notifications",
+                source_url="https://www.rbi.org.in/scripts/NotificationUser.aspx?Id=40",
+                content_hash="0" * 64,
+            )
+        )
+    finally:
+        connection.close()
+
+    client = TestClient(create_app(settings))
+    response = client.get("/documents", params={"document_type": "notification"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 1
+    assert body["items"][0]["title"] == "Notification item"
+    assert body["items"][0]["document_type"] == "notification"
+    assert body["items"][0]["source"] == "RBI Notifications"
+
+
+def test_unknown_document_type_filter_is_rejected(settings: Settings) -> None:
+    client = TestClient(create_app(settings))
+    response = client.get("/documents", params={"document_type": "speech"})
+    assert response.status_code == 400
+    assert "Unknown document_type" in response.json()["detail"]
+

@@ -8,13 +8,13 @@ from typing import List, Optional
 
 from macro_desk.config import load_settings
 from macro_desk.db.repository import DocumentRepository, connect, initialize
-from macro_desk.ingestion.pipeline import ingest_rbi_press_releases
+from macro_desk.ingestion.pipeline import ingest_configured_feeds
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Macro Desk utilities")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("ingest", help="Fetch and persist the official RBI press-release RSS feed")
+    sub.add_parser("ingest", help="Fetch and persist official RBI press-release and notification RSS feeds")
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -27,7 +27,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         connection = connect(settings.database_path)
         try:
             initialize(connection)
-            result = ingest_rbi_press_releases(settings, DocumentRepository(connection))
+            result = ingest_configured_feeds(settings, DocumentRepository(connection))
         finally:
             connection.close()
         print(

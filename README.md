@@ -13,7 +13,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 ```
 
-Optional: edit `.env`. Defaults already point at the official RBI press-release RSS feed and a local SQLite file.
+Optional: edit `.env`. Defaults already point at the official RBI press-release and notification RSS feeds and a local SQLite file.
 
 ## Environment variables
 
@@ -23,10 +23,9 @@ All settings use the `MACRO_DESK_` prefix.
 | --- | --- | --- |
 | `MACRO_DESK_DATABASE_PATH` | `data/macro_desk.sqlite` | SQLite file path |
 | `MACRO_DESK_RBI_RSS_URL` | `https://rbi.org.in/pressreleases_rss.xml` | Official RBI press-release RSS feed |
-| `MACRO_DESK_HTTP_TIMEOUT_SECONDS` | `20` | HTTP timeout for the single RSS request |
+| `MACRO_DESK_RBI_NOTIFICATION_RSS_URL` | `https://rbi.org.in/notifications_rss.xml` | Official RBI notifications RSS feed |
+| `MACRO_DESK_HTTP_TIMEOUT_SECONDS` | `20` | HTTP timeout for each RSS request |
 | `MACRO_DESK_USER_AGENT` | MacroDesk/0.1 (project URL + purpose) | Identifiable client header |
-| `MACRO_DESK_SOURCE_NAME` | `RBI Press Releases` | Stored `source` value |
-| `MACRO_DESK_DOCUMENT_TYPE` | `press_release` | Stored document type |
 
 Copy `.env.example` rather than committing secrets. This milestone has no API keys.
 
@@ -39,7 +38,9 @@ uvicorn macro_desk.main:app --reload
 - `GET /health` — liveness
 - `GET /documents?limit=50` — stored documents, newest first
 - `GET /documents?category=Payments` — same list, filtered by taxonomy category
-- `POST /ingest` — fetch the RSS feed once and persist new items
+- `GET /documents?document_type=press_release` — press releases only
+- `GET /documents?document_type=notification` — notifications only
+- `POST /ingest` — fetch each official RSS feed once and persist new items
 
 Categories are assigned with keyword rules on title and clean text (not an LLM). Each stored document includes `category` and `classification_reason`. The classifier is a single function, so it can be replaced later without changing storage or the API.
 
@@ -49,9 +50,9 @@ Categories are assigned with keyword rules on title and clean text (not an LLM).
 python -m macro_desk.cli ingest
 ```
 
-Each run performs **one** GET against the configured RSS URL, with a timeout and a clear error log if the feed is blocked, times out, or is invalid XML. Item bodies are taken from the RSS `description` field. The pipeline does not scrape linked HTML pages and does not attempt to bypass access controls, CAPTCHAs, or anti-bot responses (including HTTP 401/403/418/429).
+Each run performs **one GET per configured official feed** (press releases, then notifications), with a timeout and a clear error log if a feed is blocked, times out, or is invalid XML. Item bodies are taken from the RSS `description` field. The pipeline does not scrape linked HTML pages and does not attempt to bypass access controls, CAPTCHAs, or anti-bot responses (including HTTP 401/403/418/429).
 
-Duplicates are skipped when the `source_url` or content hash already exists.
+Stored `source` is `RBI Press Releases` or `RBI Notifications`, and `document_type` is `press_release` or `notification`. Duplicates are skipped when the `source_url` or content hash already exists, including across feeds.
 
 ## Tests
 

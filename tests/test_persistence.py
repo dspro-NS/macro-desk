@@ -41,6 +41,30 @@ def test_list_newest_can_filter_by_category(repository: DocumentRepository) -> N
     assert payments[0].category == "Payments"
 
 
+def test_list_newest_can_filter_by_document_type(repository: DocumentRepository) -> None:
+    repository.insert(
+        make_document(
+            title="Press item",
+            source="RBI Press Releases",
+            document_type="press_release",
+            source_url="https://www.rbi.org.in/pr?id=30",
+            content_hash="7" * 64,
+        )
+    )
+    repository.insert(
+        make_document(
+            title="Notification item",
+            source="RBI Notifications",
+            document_type="notification",
+            source_url="https://www.rbi.org.in/scripts/NotificationUser.aspx?Id=30",
+            content_hash="8" * 64,
+        )
+    )
+    notifications = repository.list_newest(document_type="notification")
+    assert [item.title for item in notifications] == ["Notification item"]
+    assert notifications[0].source == "RBI Notifications"
+
+
 def test_list_newest_first(repository: DocumentRepository) -> None:
     older = make_document(
         title="Older",
