@@ -56,3 +56,28 @@ def test_home_lists_latest_updates_from_existing_data(settings: Settings) -> Non
     assert "RBI source" in html
     assert "Should not appear on the homepage" not in html
     assert "Nothing new in the last 24 hours." not in html
+
+
+def test_home_shows_speech_source_and_link(settings: Settings) -> None:
+    connection = connect(settings.database_path)
+    try:
+        initialize(connection)
+        DocumentRepository(connection).insert(
+            make_document(
+                title="Governor's speech on monetary policy",
+                source="RBI Speeches",
+                document_type="speech",
+                source_url="https://www.rbi.org.in/scripts/BS_SpeechesView.aspx?id=1575",
+                content_hash="ee" + "f" * 62,
+                published_at=datetime(2026, 9, 3, 14, 30, tzinfo=timezone.utc),
+            ),
+            created_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        )
+    finally:
+        connection.close()
+
+    html = TestClient(create_app(settings)).get("/").text
+    assert "speech on monetary policy" in html
+    assert "RBI Speeches" in html
+    assert "https://www.rbi.org.in/scripts/BS_SpeechesView.aspx?id=1575" in html
+    assert "RBI source" in html

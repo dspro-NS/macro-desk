@@ -82,9 +82,9 @@ def test_configured_ingest_persists_run_results(settings, repository: DocumentRe
 """.encode("utf-8")
 
     def fetch(url: str) -> bytes:
-        if "notification" in url:
+        if "notification" in url or "speech" in url:
             return """<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0"><channel><title>NOTIFICATIONS FROM RBI</title></channel></rss>
+<rss version="2.0"><channel><title>OTHER RBI FEED</title></channel></rss>
 """.encode("utf-8")
         return payload
 

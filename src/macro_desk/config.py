@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     database_path: Path = Field(default=Path("data/macro_desk.sqlite"))
     rbi_rss_url: str = Field(default="https://rbi.org.in/pressreleases_rss.xml")
     rbi_notification_rss_url: str = Field(default="https://rbi.org.in/notifications_rss.xml")
+    rbi_speeches_rss_url: str = Field(default="https://rbi.org.in/speeches_rss.xml")
     http_timeout_seconds: float = Field(default=20.0, ge=1.0, le=120.0)
     user_agent: str = Field(
         default=(

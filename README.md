@@ -13,7 +13,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 ```
 
-Optional: edit `.env`. Defaults already point at the official RBI press-release and notification RSS feeds and a local SQLite file.
+Optional: edit `.env`. Defaults already point at the official RBI press-release, notification, and speech RSS feeds and a local SQLite file.
 
 ## Environment variables
 
@@ -24,6 +24,7 @@ All settings use the `MACRO_DESK_` prefix.
 | `MACRO_DESK_DATABASE_PATH` | `data/macro_desk.sqlite` | SQLite file path |
 | `MACRO_DESK_RBI_RSS_URL` | `https://rbi.org.in/pressreleases_rss.xml` | Official RBI press-release RSS feed |
 | `MACRO_DESK_RBI_NOTIFICATION_RSS_URL` | `https://rbi.org.in/notifications_rss.xml` | Official RBI notifications RSS feed |
+| `MACRO_DESK_RBI_SPEECHES_RSS_URL` | `https://rbi.org.in/speeches_rss.xml` | Official RBI speeches RSS feed |
 | `MACRO_DESK_HTTP_TIMEOUT_SECONDS` | `20` | HTTP timeout for each RSS request |
 | `MACRO_DESK_USER_AGENT` | MacroDesk/0.1 (project URL + purpose) | Identifiable client header |
 
@@ -41,6 +42,7 @@ uvicorn macro_desk.main:app --reload
 - `GET /documents?category=Payments` — same list, filtered by taxonomy category
 - `GET /documents?document_type=press_release` — press releases only
 - `GET /documents?document_type=notification` — notifications only
+- `GET /documents?document_type=speech` — speeches only
 - `POST /ingest` — fetch each official RSS feed once and persist new items
 - `GET /changes?hours=24` — documents first seen in the window (default 24 hours), plus ingest runs in that window
 
@@ -52,9 +54,9 @@ Categories are assigned with keyword rules on title and clean text (not an LLM).
 python -m macro_desk.cli ingest
 ```
 
-Each run performs **one GET per configured official feed** (press releases, then notifications), with a timeout and a clear error log if a feed is blocked, times out, or is invalid XML. Item bodies are taken from the RSS `description` field. The pipeline does not scrape linked HTML pages and does not attempt to bypass access controls, CAPTCHAs, or anti-bot responses (including HTTP 401/403/418/429).
+Each run performs **one GET per configured official feed** (press releases, then notifications, then speeches), with a timeout and a clear error log if a feed is blocked, times out, or is invalid XML. Item bodies are taken from the RSS `description` field. The pipeline does not scrape linked HTML pages and does not attempt to bypass access controls, CAPTCHAs, or anti-bot responses (including HTTP 401/403/418/429).
 
-Stored `source` is `RBI Press Releases` or `RBI Notifications`, and `document_type` is `press_release` or `notification`. Duplicates are skipped when the `source_url` or content hash already exists, including across feeds.
+Stored `source` is `RBI Press Releases`, `RBI Notifications`, or `RBI Speeches`, and `document_type` is `press_release`, `notification`, or `speech`. Duplicates are skipped when the `source_url` or content hash already exists, including across feeds.
 
 `GET /changes` answers “what is new to this database?” using `created_at` (first insert), not RBI’s publication date. Each CLI/`POST /ingest` run is stored in `ingest_runs` with its timestamp and counts.
 

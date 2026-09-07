@@ -99,9 +99,46 @@ def test_documents_can_be_filtered_by_document_type(settings: Settings) -> None:
     assert body["items"][0]["source"] == "RBI Notifications"
 
 
-def test_unknown_document_type_filter_is_rejected(settings: Settings) -> None:
+def test_documents_can_be_filtered_by_speech_type(settings: Settings) -> None:
+    connection = connect(settings.database_path)
+    try:
+        initialize(connection)
+        repository = DocumentRepository(connection)
+        repository.insert(
+            make_document(
+                title="Press item",
+                document_type="press_release",
+                source="RBI Press Releases",
+                source_url="https://www.rbi.org.in/pr?id=41",
+                content_hash="11" + "a" * 62,
+            )
+        )
+        repository.insert(
+            make_document(
+                title="Governor's speech on monetary policy",
+                document_type="speech",
+                source="RBI Speeches",
+                source_url="https://www.rbi.org.in/scripts/BS_SpeechesView.aspx?id=1575",
+                content_hash="12" + "a" * 62,
+            )
+        )
+    finally:
+        connection.close()
+
     client = TestClient(create_app(settings))
     response = client.get("/documents", params={"document_type": "speech"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 1
+    assert body["items"][0]["title"] == "Governor's speech on monetary policy"
+    assert body["items"][0]["document_type"] == "speech"
+    assert body["items"][0]["source"] == "RBI Speeches"
+    assert body["items"][0]["source_url"].endswith("BS_SpeechesView.aspx?id=1575")
+
+
+def test_unknown_document_type_filter_is_rejected(settings: Settings) -> None:
+    client = TestClient(create_app(settings))
+    response = client.get("/documents", params={"document_type": "tender"})
     assert response.status_code == 400
     assert "Unknown document_type" in response.json()["detail"]
 
