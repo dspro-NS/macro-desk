@@ -1,0 +1,34 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+
+class Document(BaseModel):
+    """Persisted RBI document record."""
+
+    title: str
+    published_at: datetime
+    source: str
+    source_url: str
+    document_type: str
+    raw_text: str
+    clean_text: str
+    content_hash: str
+    created_at: datetime
+    id: Optional[int] = None
+
+
+class NewDocument(BaseModel):
+    """Fields required to persist a document."""
+
+    title: str = Field(min_length=1)
+    published_at: datetime
+    source: str = Field(min_length=1)
+    source_url: str
+    document_type: str = Field(min_length=1)
+    raw_text: str
+    clean_text: str
+    content_hash: str = Field(min_length=1)
