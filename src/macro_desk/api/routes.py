@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from macro_desk.db.repository import DocumentRepository, connect, initialize
+from macro_desk.domain.taxonomy import TAXONOMY_VALUES
 from macro_desk.ingestion.pipeline import ingest_rbi_press_releases
 
 router = APIRouter()
@@ -25,6 +26,8 @@ class DocumentSummary(BaseModel):
     source_url: str
     document_type: str
     content_hash: str
+    category: str
+    classification_reason: str
     created_at: datetime
     clean_text: str
 
@@ -48,12 +51,21 @@ def health() -> HealthResponse:
 
 
 @router.get("/documents", response_model=DocumentListResponse)
-def list_documents(request: Request, limit: int = Query(default=50, ge=1, le=200)) -> DocumentListResponse:
+def list_documents(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=200),
+    category: Optional[str] = Query(default=None),
+) -> DocumentListResponse:
+    if category is not None and category not in TAXONOMY_VALUES:
+        raise HTTPException(
+            status_code=400,
+            detail="Unknown category. Use one of: {}".format(", ".join(TAXONOMY_VALUES)),
+        )
     settings = request.app.state.settings
     connection = connect(settings.database_path)
     try:
         initialize(connection)
-        items = DocumentRepository(connection).list_newest(limit=limit)
+        items = DocumentRepository(connection).list_newest(limit=limit, category=category)
     finally:
         connection.close()
     return DocumentListResponse(
@@ -67,6 +79,8 @@ def list_documents(request: Request, limit: int = Query(default=50, ge=1, le=200
                 source_url=item.source_url,
                 document_type=item.document_type,
                 content_hash=item.content_hash,
+                category=item.category,
+                classification_reason=item.classification_reason,
                 created_at=item.created_at,
                 clean_text=item.clean_text,
             )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from macro_desk.domain.classification import classify_document
 from macro_desk.domain.models import NewDocument
 
 
@@ -17,4 +18,8 @@ def make_document(**overrides) -> NewDocument:
         "content_hash": "a" * 64,
     }
     payload.update(overrides)
+    if "category" not in payload or "classification_reason" not in payload:
+        result = classify_document(payload["title"], payload["clean_text"])
+        payload.setdefault("category", result.category)
+        payload.setdefault("classification_reason", result.reason)
     return NewDocument(**payload)

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Optional
 
+from macro_desk.domain.classification import classify_document
 from macro_desk.domain.models import Document, NewDocument
 
 SCHEMA = """
@@ -18,13 +19,20 @@ CREATE TABLE IF NOT EXISTS documents (
     raw_text TEXT NOT NULL,
     clean_text TEXT NOT NULL,
     content_hash TEXT NOT NULL,
+    category TEXT NOT NULL,
+    classification_reason TEXT NOT NULL,
     created_at TEXT NOT NULL,
     UNIQUE (source_url),
     UNIQUE (content_hash)
 );
+"""
 
+INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_documents_published_at
     ON documents (published_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_documents_category
+    ON documents (category);
 """
 
 
@@ -38,7 +46,43 @@ def connect(database_path: Path) -> sqlite3.Connection:
 
 def initialize(connection: sqlite3.Connection) -> None:
     connection.executescript(SCHEMA)
+    _ensure_classification_columns(connection)
+    connection.executescript(INDEXES)
+    _backfill_classifications(connection)
     connection.commit()
+
+
+def _table_columns(connection: sqlite3.Connection) -> set[str]:
+    return {row["name"] for row in connection.execute("PRAGMA table_info(documents)")}
+
+
+def _ensure_classification_columns(connection: sqlite3.Connection) -> None:
+    columns = _table_columns(connection)
+    if "category" not in columns:
+        connection.execute("ALTER TABLE documents ADD COLUMN category TEXT")
+    if "classification_reason" not in columns:
+        connection.execute("ALTER TABLE documents ADD COLUMN classification_reason TEXT")
+
+
+def _backfill_classifications(connection: sqlite3.Connection) -> None:
+    rows = connection.execute(
+        """
+        SELECT id, title, clean_text
+        FROM documents
+        WHERE category IS NULL OR category = ''
+           OR classification_reason IS NULL OR classification_reason = ''
+        """
+    ).fetchall()
+    for row in rows:
+        result = classify_document(row["title"], row["clean_text"])
+        connection.execute(
+            """
+            UPDATE documents
+            SET category = ?, classification_reason = ?
+            WHERE id = ?
+            """,
+            (result.category, result.reason, row["id"]),
+        )
 
 
 def _parse_datetime(value: str) -> datetime:
@@ -59,6 +103,8 @@ def _row_to_document(row: sqlite3.Row) -> Document:
         raw_text=row["raw_text"],
         clean_text=row["clean_text"],
         content_hash=row["content_hash"],
+        category=row["category"],
+        classification_reason=row["classification_reason"],
         created_at=_parse_datetime(row["created_at"]),
     )
 
@@ -75,8 +121,9 @@ class DocumentRepository:
                 """
                 INSERT INTO documents (
                     title, published_at, source, source_url, document_type,
-                    raw_text, clean_text, content_hash, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    raw_text, clean_text, content_hash, category,
+                    classification_reason, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     document.title,
@@ -87,6 +134,8 @@ class DocumentRepository:
                     document.raw_text,
                     document.clean_text,
                     document.content_hash,
+                    document.category,
+                    document.classification_reason,
                     created.isoformat(),
                 ),
             )
@@ -116,13 +165,24 @@ class DocumentRepository:
         ).fetchone()
         return row is not None
 
-    def list_newest(self, limit: int = 50) -> list[Document]:
-        rows: Iterable[sqlite3.Row] = self._connection.execute(
-            """
-            SELECT * FROM documents
-            ORDER BY published_at DESC, created_at DESC, id DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
+    def list_newest(self, limit: int = 50, category: Optional[str] = None) -> list[Document]:
+        if category:
+            rows: Iterable[sqlite3.Row] = self._connection.execute(
+                """
+                SELECT * FROM documents
+                WHERE category = ?
+                ORDER BY published_at DESC, created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (category, limit),
+            ).fetchall()
+        else:
+            rows = self._connection.execute(
+                """
+                SELECT * FROM documents
+                ORDER BY published_at DESC, created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
         return [_row_to_document(row) for row in rows]

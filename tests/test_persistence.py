@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
+from pathlib import Path
+import sqlite3
 
-from macro_desk.db.repository import DocumentRepository
+from macro_desk.db.repository import DocumentRepository, connect, initialize
 from tests.helpers import make_document
 
 
@@ -13,6 +15,30 @@ def test_insert_and_fetch_document(repository: DocumentRepository) -> None:
     assert fetched is not None
     assert fetched.content_hash == stored.content_hash
     assert fetched.source_url == stored.source_url
+    assert fetched.category == stored.category
+    assert fetched.classification_reason
+
+
+def test_list_newest_can_filter_by_category(repository: DocumentRepository) -> None:
+    repository.insert(
+        make_document(
+            title="Minutes of the Monetary Policy Committee Meeting",
+            clean_text="The MPC kept the policy repo rate unchanged.",
+            source_url="https://www.rbi.org.in/pr?id=10",
+            content_hash="e" * 64,
+        )
+    )
+    repository.insert(
+        make_document(
+            title="Enhancement of UPI transaction limits",
+            clean_text="Limits on the Unified Payments Interface have been enhanced.",
+            source_url="https://www.rbi.org.in/pr?id=11",
+            content_hash="f" * 64,
+        )
+    )
+    payments = repository.list_newest(category="Payments")
+    assert [item.title for item in payments] == ["Enhancement of UPI transaction limits"]
+    assert payments[0].category == "Payments"
 
 
 def test_list_newest_first(repository: DocumentRepository) -> None:
@@ -33,3 +59,54 @@ def test_list_newest_first(repository: DocumentRepository) -> None:
 
     titles = [item.title for item in repository.list_newest(limit=10)]
     assert titles == ["Newer", "Older"]
+
+
+def test_initialize_classifies_legacy_rows(tmp_path: Path) -> None:
+    database_path = tmp_path / "legacy.sqlite"
+    legacy = sqlite3.connect(database_path)
+    legacy.execute(
+        """
+        CREATE TABLE documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            published_at TEXT NOT NULL,
+            source TEXT NOT NULL,
+            source_url TEXT NOT NULL,
+            document_type TEXT NOT NULL,
+            raw_text TEXT NOT NULL,
+            clean_text TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    legacy.execute(
+        """
+        INSERT INTO documents (
+            title, published_at, source, source_url, document_type,
+            raw_text, clean_text, content_hash, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "Minutes of the Monetary Policy Committee Meeting",
+            "2026-08-01T00:00:00+00:00",
+            "RBI Press Releases",
+            "https://www.rbi.org.in/pr?id=legacy",
+            "press_release",
+            "raw",
+            "The MPC kept the policy repo rate unchanged.",
+            "3" * 64,
+            "2026-08-01T00:00:00+00:00",
+        ),
+    )
+    legacy.commit()
+    legacy.close()
+
+    connection = connect(database_path)
+    try:
+        initialize(connection)
+        stored = DocumentRepository(connection).list_newest()[0]
+        assert stored.category == "Monetary Policy"
+        assert stored.classification_reason
+    finally:
+        connection.close()

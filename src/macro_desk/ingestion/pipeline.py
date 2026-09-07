@@ -6,6 +6,7 @@ from typing import Callable, Optional
 
 from macro_desk.config import Settings
 from macro_desk.db.repository import DocumentRepository
+from macro_desk.domain.classification import DocumentClassifier, classify_document
 from macro_desk.domain.hashing import compute_content_hash, normalize_whitespace
 from macro_desk.domain.models import NewDocument
 from macro_desk.domain.text import html_to_text
@@ -30,6 +31,7 @@ def ingest_rbi_press_releases(
     settings: Settings,
     repository: DocumentRepository,
     fetch: Optional[FetchFn] = None,
+    classifier: Optional[DocumentClassifier] = None,
 ) -> IngestResult:
     """Idempotent ingest of the configured official RBI RSS feed.
 
@@ -66,7 +68,7 @@ def ingest_rbi_press_releases(
     result.fetched = len(items)
     for item in items:
         try:
-            _persist_item(settings, repository, item, result)
+            _persist_item(settings, repository, item, result, classifier)
         except Exception as exc:
             logger.exception("Failed to persist %s", item.source_url)
             result.failed += 1
@@ -82,7 +84,13 @@ def ingest_rbi_press_releases(
     return result
 
 
-def _persist_item(settings: Settings, repository: DocumentRepository, item, result: IngestResult) -> None:
+def _persist_item(
+    settings: Settings,
+    repository: DocumentRepository,
+    item,
+    result: IngestResult,
+    classifier: Optional[DocumentClassifier],
+) -> None:
     clean_text = html_to_text(item.raw_text) or normalize_whitespace(item.title)
     content_hash = compute_content_hash(item.title, clean_text)
 
@@ -91,6 +99,7 @@ def _persist_item(settings: Settings, repository: DocumentRepository, item, resu
         logger.debug("Skipping duplicate %s", item.source_url)
         return
 
+    classification = classify_document(item.title, clean_text, classifier=classifier)
     document = NewDocument(
         title=normalize_whitespace(item.title),
         published_at=parse_pub_date(item.published_at),
@@ -100,6 +109,8 @@ def _persist_item(settings: Settings, repository: DocumentRepository, item, resu
         raw_text=item.raw_text,
         clean_text=clean_text,
         content_hash=content_hash,
+        category=classification.category,
+        classification_reason=classification.reason,
     )
     stored = repository.insert(document)
     if stored is None:

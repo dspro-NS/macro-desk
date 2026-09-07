@@ -17,6 +17,8 @@ class Document(BaseModel):
     raw_text: str
     clean_text: str
     content_hash: str
+    category: str
+    classification_reason: str
     created_at: datetime
     id: Optional[int] = None
 
@@ -32,3 +34,5 @@ class NewDocument(BaseModel):
     raw_text: str
     clean_text: str
     content_hash: str = Field(min_length=1)
+    category: str = Field(min_length=1)
+    classification_reason: str = Field(min_length=1)

@@ -38,7 +38,10 @@ uvicorn macro_desk.main:app --reload
 
 - `GET /health` — liveness
 - `GET /documents?limit=50` — stored documents, newest first
+- `GET /documents?category=Payments` — same list, filtered by taxonomy category
 - `POST /ingest` — fetch the RSS feed once and persist new items
+
+Categories are assigned with keyword rules on title and clean text (not an LLM). Each stored document includes `category` and `classification_reason`. The classifier is a single function, so it can be replaced later without changing storage or the API.
 
 ## Run ingestion from the CLI
 
@@ -75,7 +78,7 @@ PostgreSQL (and later a vector store) remains the likely production step when th
 src/macro_desk/
   api/           FastAPI routes
   db/            SQLite connection and persistence
-  domain/        Document model, hashing, HTML-to-text
+  domain/        Document model, hashing, HTML-to-text, keyword classification
   ingestion/     RSS fetch, parse, idempotent pipeline
 tests/           hash, dedup, and persistence tests
 ```

@@ -56,3 +56,4 @@ def test_pipeline_skips_duplicates_without_network(settings, repository: Documen
     assert second.skipped == 2
     assert second.failed == 0
     assert [item.title for item in repository.list_newest()] == ["First item", "Second item"]
+    assert all(item.category == "Other" for item in repository.list_newest())
