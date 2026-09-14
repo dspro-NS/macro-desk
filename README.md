@@ -27,8 +27,10 @@ All settings use the `MACRO_DESK_` prefix.
 | `MACRO_DESK_RBI_SPEECHES_RSS_URL` | `https://rbi.org.in/speeches_rss.xml` | Official RBI speeches RSS feed |
 | `MACRO_DESK_HTTP_TIMEOUT_SECONDS` | `20` | HTTP timeout for each RSS request |
 | `MACRO_DESK_USER_AGENT` | MacroDesk/0.1 (project URL + purpose) | Identifiable client header |
+| `MACRO_DESK_OPENAI_API_KEY` | _(empty)_ | Optional. Enables on-demand explanations |
+| `MACRO_DESK_OPENAI_MODEL` | `gpt-5.6-luna` | Model used by the OpenAI provider |
 
-Copy `.env.example` rather than committing secrets. This milestone has no API keys.
+Copy `.env.example` rather than committing secrets. Leave the OpenAI key blank to keep Explain disabled.
 
 ## Run the API
 
@@ -46,8 +48,11 @@ uvicorn macro_desk.main:app --reload
 - `GET /documents?importance=high` — filter by rule-based importance (`high`, `medium`, `low`)
 - `POST /ingest` — fetch each official RSS feed once and persist new items
 - `GET /changes?hours=24` — documents first seen in the window (default 24 hours), plus ingest runs in that window
+- `POST /documents/{id}/explanation` — on-demand, source-grounded explanation for one stored item (cached by document id + prompt version)
 
 Categories are assigned with keyword rules on title and clean text (not an LLM). Each stored document includes `category`, `classification_reason`, `importance`, and `importance_reason`. The classifier and importance ranker are single functions, so they can be replaced later without changing storage or the API.
+
+The homepage includes a quiet **Explain why this matters** action under each item. It uses only the stored RSS excerpt fields (not the full linked page), returns a short structured note, and reuses a SQLite cache on repeat.
 
 ## Run ingestion from the CLI
 

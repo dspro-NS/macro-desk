@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Optional
 
+from macro_desk.ai.contracts import CachedExplanation, ExplanationDraft
 from macro_desk.domain.classification import classify_document
 from macro_desk.domain.importance import rank_importance
 from macro_desk.domain.models import Document, IngestRun, NewDocument
@@ -44,6 +45,23 @@ CREATE TABLE IF NOT EXISTS ingest_runs (
 );
 """
 
+EXPLANATION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS document_explanations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL,
+    prompt_version TEXT NOT NULL,
+    what_changed TEXT NOT NULL,
+    why_it_matters TEXT NOT NULL,
+    who_should_care TEXT NOT NULL,
+    evidence_snippets TEXT NOT NULL,
+    limitation_note TEXT NOT NULL,
+    source_url TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (document_id, prompt_version),
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+);
+"""
+
 INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_documents_published_at
     ON documents (published_at DESC);
@@ -59,6 +77,9 @@ CREATE INDEX IF NOT EXISTS idx_documents_created_at
 
 CREATE INDEX IF NOT EXISTS idx_ingest_runs_finished_at
     ON ingest_runs (finished_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_document_explanations_document
+    ON document_explanations (document_id);
 """
 
 
@@ -73,6 +94,7 @@ def connect(database_path: Path) -> sqlite3.Connection:
 def initialize(connection: sqlite3.Connection) -> None:
     connection.executescript(SCHEMA)
     connection.executescript(INGEST_RUN_SCHEMA)
+    connection.executescript(EXPLANATION_SCHEMA)
     _ensure_classification_columns(connection)
     _ensure_importance_columns(connection)
     connection.executescript(INDEXES)
@@ -166,6 +188,27 @@ def _row_to_document(row: sqlite3.Row) -> Document:
         importance=row["importance"],
         importance_reason=row["importance_reason"],
         created_at=_parse_datetime(row["created_at"]),
+    )
+
+
+def _row_to_explanation(row: sqlite3.Row) -> CachedExplanation:
+    raw_snippets = row["evidence_snippets"]
+    try:
+        snippets = json.loads(raw_snippets) if raw_snippets else []
+    except json.JSONDecodeError:
+        snippets = []
+    if not isinstance(snippets, list):
+        snippets = []
+    return CachedExplanation(
+        document_id=row["document_id"],
+        prompt_version=row["prompt_version"],
+        what_changed=row["what_changed"],
+        why_it_matters=row["why_it_matters"],
+        who_should_care=row["who_should_care"],
+        evidence_snippets=[str(item) for item in snippets],
+        limitation_note=row["limitation_note"],
+        source_url=row["source_url"],
+        cached=False,
     )
 
 
@@ -352,3 +395,58 @@ class DocumentRepository:
             (since.isoformat(), limit),
         ).fetchall()
         return [_row_to_ingest_run(row) for row in rows]
+
+    def get_explanation(
+        self,
+        document_id: int,
+        prompt_version: str,
+    ) -> Optional[CachedExplanation]:
+        row = self._connection.execute(
+            """
+            SELECT * FROM document_explanations
+            WHERE document_id = ? AND prompt_version = ?
+            """,
+            (document_id, prompt_version),
+        ).fetchone()
+        return _row_to_explanation(row) if row else None
+
+    def save_explanation(
+        self,
+        document_id: int,
+        prompt_version: str,
+        source_url: str,
+        draft: ExplanationDraft,
+        created_at: Optional[datetime] = None,
+    ) -> CachedExplanation:
+        created = created_at or datetime.now(timezone.utc)
+        try:
+            self._connection.execute(
+                """
+                INSERT INTO document_explanations (
+                    document_id, prompt_version, what_changed, why_it_matters,
+                    who_should_care, evidence_snippets, limitation_note,
+                    source_url, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    document_id,
+                    prompt_version,
+                    draft.what_changed,
+                    draft.why_it_matters,
+                    draft.who_should_care,
+                    json.dumps(draft.evidence_snippets),
+                    draft.limitation_note,
+                    source_url,
+                    created.isoformat(),
+                ),
+            )
+            self._connection.commit()
+        except sqlite3.IntegrityError:
+            stored = self.get_explanation(document_id, prompt_version)
+            if stored is not None:
+                return stored
+            raise
+        stored = self.get_explanation(document_id, prompt_version)
+        if stored is None:  # pragma: no cover
+            raise RuntimeError("Failed to persist explanation")
+        return stored

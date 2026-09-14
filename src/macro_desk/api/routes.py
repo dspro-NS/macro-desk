@@ -7,6 +7,8 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
+from macro_desk.ai.contracts import ExplanationConfigError, ExplanationProviderError
+from macro_desk.ai.service import explain_document
 from macro_desk.api.home import render_home
 from macro_desk.db.repository import DocumentRepository, connect, initialize
 from macro_desk.domain.importance import IMPORTANCE_VALUES
@@ -75,6 +77,18 @@ class ChangesResponse(BaseModel):
     count: int
     items: List[ChangedDocument]
     ingest_runs: List[IngestRunSummary]
+
+
+class ExplanationResponse(BaseModel):
+    document_id: int
+    prompt_version: str
+    what_changed: str
+    why_it_matters: str
+    who_should_care: str
+    evidence_snippets: List[str]
+    limitation_note: str
+    source_url: str
+    cached: bool
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -219,4 +233,45 @@ def list_changes(
             )
             for run in runs
         ],
+    )
+
+
+@router.post("/documents/{document_id}/explanation", response_model=ExplanationResponse)
+def create_document_explanation(document_id: int, request: Request) -> ExplanationResponse:
+    settings = request.app.state.settings
+    connection = connect(settings.database_path)
+    try:
+        initialize(connection)
+        repository = DocumentRepository(connection)
+        document = repository.get_by_id(document_id)
+        if document is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+        try:
+            result = explain_document(
+                document,
+                repository,
+                request.app.state.explanation_provider,
+            )
+        except ExplanationConfigError:
+            raise HTTPException(
+                status_code=503,
+                detail="Explanations are not configured on this desk.",
+            )
+        except ExplanationProviderError:
+            raise HTTPException(
+                status_code=502,
+                detail="The explanation service failed. The original RBI source is unchanged.",
+            )
+    finally:
+        connection.close()
+    return ExplanationResponse(
+        document_id=result.document_id,
+        prompt_version=result.prompt_version,
+        what_changed=result.what_changed,
+        why_it_matters=result.why_it_matters,
+        who_should_care=result.who_should_care,
+        evidence_snippets=result.evidence_snippets,
+        limitation_note=result.limitation_note,
+        source_url=result.source_url,
+        cached=result.cached,
     )

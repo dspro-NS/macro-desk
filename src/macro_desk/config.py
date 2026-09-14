@@ -27,6 +27,8 @@ class Settings(BaseSettings):
             "personal research ingestion)"
         )
     )
+    openai_api_key: str = Field(default="")
+    openai_model: str = Field(default="gpt-5.6-luna")
 
 
 def load_settings() -> Settings:
