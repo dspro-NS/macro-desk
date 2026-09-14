@@ -15,9 +15,9 @@ from macro_desk.ai.contracts import (
 
 logger = logging.getLogger(__name__)
 
-_INSTRUCTIONS = """You create a concise concept-revision note for Macro Desk.
+_INSTRUCTIONS = """You create a concise concept-revision note for India Economic Brief.
 
-Macro Desk is a morning India macro intelligence + learning tool. The user already has the RBI source link.
+India Economic Brief is a morning India macro intelligence + learning tool. The user already has the RBI source link.
 Target ~3–5 minutes. Teach so the user can REASON about the concept—not merely recognise a term.
 
 Tone: clear, intelligent, conversational, precise, calm.

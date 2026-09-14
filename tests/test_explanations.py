@@ -431,6 +431,7 @@ def test_openai_instructions_require_mechanism_teaching() -> None:
     assert "meta-disclaimers" in text or "defensive/meta" in text
     assert "same causal chain not repeated" in text.lower() or "ONCE" in text
     assert "UPSC" in text
+    assert "India Economic Brief" in text
     assert "why_this_matters" in text
     assert "3–5 minutes" in text or "~3–5 minutes" in text
 

@@ -12,7 +12,7 @@ from macro_desk.ingestion.pipeline import ingest_configured_feeds
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Macro Desk utilities")
+    parser = argparse.ArgumentParser(description="India Economic Brief utilities")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("ingest", help="Fetch and persist official RBI press-release, notification, and speech RSS feeds")
     args = parser.parse_args(argv)

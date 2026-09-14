@@ -98,6 +98,7 @@ def test_home_lists_latest_updates_from_existing_data(settings: Settings) -> Non
     assert "RBI source" in html
     assert "Should not appear on the homepage" not in html
     assert "Nothing new in the last 24 hours." not in html
+    assert "India Economic Brief" in html
     assert "Good morning" in html
     assert "Latest updates" in html
 

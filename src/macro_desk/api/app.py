@@ -43,7 +43,7 @@ def create_app(
         yield
 
     app = FastAPI(
-        title="Macro Desk",
+        title="India Economic Brief",
         description="Personal India macro and RBI intelligence system",
         version="0.1.0",
         lifespan=lifespan,

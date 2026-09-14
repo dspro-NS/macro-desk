@@ -1132,14 +1132,14 @@ def render_home(documents: Sequence[Document], hours: int = 24) -> str:
         "<head>\n"
         '  <meta charset="utf-8">\n'
         '  <meta name="viewport" content="width=device-width, initial-scale=1">\n'
-        "  <title>Macro Desk</title>\n"
+        "  <title>India Economic Brief</title>\n"
         "  <style>" + _HOME_CSS + "</style>\n"
         "</head>\n"
         "<body>\n"
         '  <div class="app">\n'
         '    <section id="view-list" class="view">\n'
         '      <header class="hero">\n'
-        '        <h1 class="brand">Macro Desk</h1>\n'
+        '        <h1 class="brand">India Economic Brief</h1>\n'
         '        <p class="greeting">Good morning. Let’s see what’s moving in the Indian economy.</p>\n'
         "      </header>\n"
         '      <div class="home-layout">\n'

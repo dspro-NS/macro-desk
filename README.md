@@ -1,4 +1,4 @@
-# Macro Desk
+# India Economic Brief
 
 Personal **India macro and RBI intelligence** system. Milestone 1 stores official RBI press releases. It does not summarise, embed, or generate briefs.
 

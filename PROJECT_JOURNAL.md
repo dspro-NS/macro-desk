@@ -1,6 +1,6 @@
-# Macro Desk — Project Journal
+# India Economic Brief — Project Journal
 
-Living engineering journal for Macro Desk. Entries below are reconstructed from the repository, git history, `README.md`, `rbi_macro_intelligence_project_brief_v2.md`, source code, and tests. Items that cannot be confirmed from those artifacts are marked **To verify**.
+Living engineering journal for India Economic Brief. Entries below are reconstructed from the repository, git history, `README.md`, `rbi_macro_intelligence_project_brief_v2.md`, source code, and tests. Items that cannot be confirmed from those artifacts are marked **To verify**.
 
 Last reconstructed from working tree after concept-revision redesign (prior tip included `5c00c4b` journal + `758f77b` explanations).
 
@@ -8,7 +8,7 @@ Last reconstructed from working tree after concept-revision redesign (prior tip 
 
 ## 1. Project Goal
 
-Macro Desk is a personal **India macro and RBI intelligence** system. The project brief (`rbi_macro_intelligence_project_brief_v2.md`) frames the product around answering:
+India Economic Brief is a personal **India macro and RBI intelligence** system. The project brief (`rbi_macro_intelligence_project_brief_v2.md`) frames the product around answering:
 
 > What changed in India's economic/financial environment, why does it matter, and what should I understand next?
 
@@ -191,7 +191,7 @@ Only challenges evidenced by brief, code, commits, or tests are listed.
 
 ### Product pivot: document explanation → concept revision
 
-Macro Desk’s intended daily use is: open the desk in the morning, see important fresh RBI/macro developments, and use each development as a **trigger to strengthen fundamentals**—not to consume another news summary.
+India Economic Brief’s intended daily use is: open the desk in the morning, see important fresh RBI/macro developments, and use each development as a **trigger to strengthen fundamentals**—not to consume another news summary.
 
 **Why document explanation (`explain-v1`) was insufficient**
 
@@ -199,7 +199,7 @@ Macro Desk’s intended daily use is: open the desk in the morning, see importan
 - That improved reading of the update, but did not reliably rebuild the underlying concept (e.g. PSL vs ANBC as a denominator).
 - It risked feeling like a generic summarizer rather than a learning loop.
 
-**Why concept revision fits Macro Desk better**
+**Why concept revision fits India Economic Brief better**
 
 - Update → primary concept → mechanism (if needed) → sparse related concepts → implications → active recall → takeaways.
 - Educational fundamentals may go beyond the excerpt; update-specific claims stay source-grounded and limited.
@@ -269,7 +269,7 @@ Presentation-only redesign in `api/home.py` (no API/schema/prompt/ingest/DB chan
 
 Homepage:
 - Soft ivory page with very low-contrast pastel-wave atmosphere (CSS radial gradients / blurred pseudo-elements).
-- Hero: “Macro Desk” + “Good morning. Let’s see what’s moving in the Indian economy.”
+- Hero: “India Economic Brief” + “Good morning. Let’s see what’s moving in the Indian economy.”
 - “Latest updates” reading list: document type / domain / importance pills, dominant title, short supporting line from `clean_text`, date, “Revise the concepts →”, RBI source link.
 - Clicking an update opens an in-page notebook view (same `/` route; still `POST /documents/{id}/explanation`).
 
@@ -279,6 +279,10 @@ Notebook:
 - Right page: structured bullets / connections / quiet recall MCQs from API `sections`; optional Key takeaway from `remember_this`.
 - Desktop two-page layout with minimal spiral rings; mobile stacks and hides the spine.
 - Titles continue to use `sanitize_plain_text` before render.
+
+**Product rename: Macro Desk → India Economic Brief**
+
+User-facing product brand renamed to **India Economic Brief**. Internal Python package/module path `macro_desk`, env prefix `MACRO_DESK_`, SQLite paths, and technical User-Agent (`MacroDesk/…`) remain unchanged so imports, config, and ingestion identity stay stable.
 
 ### What exists
 

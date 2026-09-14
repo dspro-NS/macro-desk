@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "macro-desk"
 version = "0.1.0"
-description = "Personal India macro and RBI intelligence system"
+description = "India Economic Brief — personal India macro and RBI intelligence system"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
