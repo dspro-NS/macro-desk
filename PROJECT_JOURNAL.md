@@ -2,7 +2,7 @@
 
 Living engineering journal for Macro Desk. Entries below are reconstructed from the repository, git history, `README.md`, `rbi_macro_intelligence_project_brief_v2.md`, source code, and tests. Items that cannot be confirmed from those artifacts are marked **To verify**.
 
-Last reconstructed from git tip: `758f77b` (`feat: add on-demand source-grounded RBI item explanations`, 2026-09-14).
+Last reconstructed from working tree after concept-revision redesign (prior tip included `5c00c4b` journal + `758f77b` explanations).
 
 ---
 
@@ -189,55 +189,150 @@ Only challenges evidenced by brief, code, commits, or tests are listed.
 
 ## 5. AI / LLM Integration
 
+### Product pivot: document explanation → concept revision
+
+Macro Desk’s intended daily use is: open the desk in the morning, see important fresh RBI/macro developments, and use each development as a **trigger to strengthen fundamentals**—not to consume another news summary.
+
+**Why document explanation (`explain-v1`) was insufficient**
+
+- It answered “what changed / why it matters / who should care” for one item.
+- That improved reading of the update, but did not reliably rebuild the underlying concept (e.g. PSL vs ANBC as a denominator).
+- It risked feeling like a generic summarizer rather than a learning loop.
+
+**Why concept revision fits Macro Desk better**
+
+- Update → primary concept → mechanism (if needed) → sparse related concepts → implications → active recall → takeaways.
+- Educational fundamentals may go beyond the excerpt; update-specific claims stay source-grounded and limited.
+- Designed for ~3–5 minutes, adaptive depth, clarity over completeness—not an exam portal or long article.
+
+**Decisions on brevity, adaptive depth, and active recall**
+
+- Prompt/schema version evolved: `concept-revision-v1` → `v2` → `v3` → `v4` → **`concept-revision-v5`** (does **not** redefine `explain-v1`).
+- Optional sections (`how_it_works`, `related_concepts`) use empty arrays when omitted.
+- Conceptual teaching fields are **structured bullet arrays** (content ≠ presentation); the UI renders lists.
+- Default quiz: 2–3 conceptual MCQs with short post-answer explanations (active recall, not a question bank).
+- UI action: **Revise the concepts**; progressive disclosure; interactive quiz in-page.
+
+**Refinement (`concept-revision-v2`): shift center of gravity off the document**
+
+The first concept-revision version still felt too document-centric—especially a “From this RBI item” fact list that competed with the source link the user already has. This pass deliberately:
+
+- treats `what_happened` as the only place for source update facts;
+- prefers `source_backed_facts=[]` and **removes that section from the UI**;
+- reframes headings around the learning hierarchy (concept → mechanism → connections → implications → recall);
+- asks for causal bridges in related concepts, not glossary dumps;
+- prefers reasoning MCQs (“if X changes, what follows?”) over excerpt trivia;
+- keeps `remember_this` to a ~20-second mental model (≤4 bullets);
+- bumps prompt version so old v1 caches are not silently reused.
+
+**Refinement (`concept-revision-v3`): definitions → mechanism teaching**
+
+Even after v2, drafts could still read like correct-sounding summaries/definitions (“what the term means”) rather than teaching the user how to reason. Prompt-only refinement (no schema/UI/architecture change):
+
+- ask “what is actually happening underneath?”;
+- require mechanism (who decides, incentives, trade-offs, what could go wrong);
+- use selective BEFORE→AFTER contrasts for policy/regulatory shifts;
+- prefer explicit causal chains over topic lists;
+- distinguish easy-to-confuse pairs when useful;
+- use short concrete examples when abstraction stays vague;
+- make `why_this_matters` an analytical chain (change → behaviour/constraint → effect → who);
+- MCQs must require the mechanism just taught;
+- `remember_this` compresses the mental model, not earlier prose;
+- internal quality gate in the prompt before returning;
+- bump to v3 so prior caches regenerate.
+
+**UI milestone: full progressive disclosure + content/UI separation**
+
+Revision content is assembled into typed `RevisionSection` objects (`ai/sections.py`) and returned as `sections` on the explanation API. The homepage JS maps over those sections as editorial accordions (`rev-section`), all collapsed by default—no hard-coded RBI prose in the frontend. Optional empty sections are omitted. Design tokens (`--color-*`, `--font-*`) centralize palette/typography so later visual iteration does not require hunting through components. Goal: refine prompts/content without repeatedly rewriting the UI.
+
+**Refinement (`concept-revision-v5`): paragraphs → structured bullets + HTML title cleanup**
+
+Daily revision prose was too paragraph-heavy for a morning learning loop. Large blocks raise cognitive load; the product needs scannable editorial briefs (one idea per bullet, usually 1–2 sentences, ~2–5 bullets per conceptual section)—not an exam-prep notes dump and not markdown bullets stuffed into strings.
+
+- Schema/prompt bumped to **`concept-revision-v5`**.
+- `what_happened`, `primary_concept_explanation`, `how_it_works`, `why_this_matters` are **string arrays**.
+- `RevisionSection` carries `bullets: list[str]` for conceptual kinds (`bullets` / `concept`); quiz and connections stay typed structures.
+- UI renders `<ul class="rev-bullets">` from those arrays (comfortable spacing, light indentation); accordion shell unchanged.
+- Structured content keeps future prompt/content refinement independent of CSS/JS presentation.
+
+Separately, RBI RSS titles/descriptions can contain HTML such as `<sup>1</sup>`. Escaping on the homepage made tags visible (`Decade<sup>1</sup>`). Fix at the normalization boundary—not a template-only patch:
+
+- `domain/text.py`: `html_to_text` / `sanitize_plain_text` skip `sup`/`sub` (and script/style) content so footnote markers are dropped for titles/metadata.
+- Ingest (`pipeline._persist_item`) sanitizes titles before hash/classify/store.
+- Repository `_row_to_document` sanitizes title/`clean_text` on read for older dirty rows.
+- AI `item_from_document` re-sanitizes title and `clean_text` before model input.
+- Tests: `tests/test_text.py` (footnote example + common tags); explanation tests assert structured `sections[].bullets` and `rev-bullets` in the homepage JS.
+
+**UI milestone: intelligence notebook (homepage + revision)**
+
+Presentation-only redesign in `api/home.py` (no API/schema/prompt/ingest/DB changes). Goal: a calm morning notebook—editorial list → spiral two-page revision—not a dashboard or exam portal.
+
+Homepage:
+- Soft ivory page with very low-contrast pastel-wave atmosphere (CSS radial gradients / blurred pseudo-elements).
+- Hero: “Macro Desk” + “Good morning. Let’s see what’s moving in the Indian economy.”
+- “Latest updates” reading list: document type / domain / importance pills, dominant title, short supporting line from `clean_text`, date, “Revise the concepts →”, RBI source link.
+- Clicking an update opens an in-page notebook view (same `/` route; still `POST /documents/{id}/explanation`).
+
+Notebook:
+- Article header (metadata + title + source).
+- Left page: all six learning sections with subtle tone accents; only the active item is tinted.
+- Right page: structured bullets / connections / quiet recall MCQs from API `sections`; optional Key takeaway from `remember_this`.
+- Desktop two-page layout with minimal spiral rings; mobile stacks and hides the spine.
+- Titles continue to use `sanitize_plain_text` before render.
+
 ### What exists
 
-- On-demand explanation for **one** stored document
-- Endpoint: `POST /documents/{document_id}/explanation`
-- UI: `<details>` “Explain why this matters” under each homepage item; fetch on open; render with `textContent` (no HTML injection of model output)
+- On-demand concept revision for **one** stored document
+- Endpoint: `POST /documents/{document_id}/explanation` (same path; new response schema)
+- UI: homepage reading list → in-page spiral notebook; fetch on open; render with DOM `textContent` / buttons (no unsanitized HTML of model output)
 
 ### Architecture
 
 ```text
 UI / API
   → explain_document (ai/service.py)
-      → cache lookup (document_explanations)
+      → cache lookup (document_explanations by document_id + prompt version)
       → ExplanationProvider.generate (protocol)
           → OpenAIExplanationProvider (Responses API)
-      → save_explanation
+      → save_explanation (JSON payload + mirrored legacy columns)
 ```
 
 ### Provider / API details (as coded)
 
 - Model setting: `MACRO_DESK_OPENAI_MODEL` default `gpt-5.6-luna`
-- `client.responses.create(..., store=False, text.format.type=json_schema, strict=True)`
-- Schema fields: `what_changed`, `why_it_matters`, `who_should_care`, `evidence_snippets`, `limitation_note`
-- App trims evidence snippets to at most 3 after parse
+- `client.responses.create(..., store=False, text.format.type=json_schema, strict=True, name=rbi_concept_revision)`
+- Core fields: `what_happened` (bullets), `primary_concept_name`, `primary_concept_explanation` (bullets), `why_this_matters` (bullets), `quiz`, `remember_this`
+- Optional: `how_it_works` (bullets or `[]`), `related_concepts`, `source_backed_facts`, `limitation_note`
+- App normalizes: ≤5 bullets per conceptual list, ≤3 related concepts, ≤3 quiz items (≤1 source fact), ≤4 options, ≤4 takeaways
 - Errors: `ExplanationConfigError` → HTTP 503; `ExplanationProviderError` → HTTP 502
 
 ### Caching / persistence
 
 - Table `document_explanations`
 - Unique `(document_id, prompt_version)`
-- FK to `documents(id)` with `ON DELETE CASCADE`
-- Stores structured fields + `source_url` + `created_at`
+- Full revision JSON in `payload` column (added via `ALTER` for existing DBs)
+- Legacy text columns mirrored for inspectability (`what_changed` ← `what_happened`, etc.)
+- Old `explain-v1` rows do not satisfy `concept-revision-v1` cache lookups
 - Repeat calls return `cached: true` without another model call
 - No regenerate endpoint yet
 
 ### Prompt versioning
 
-- Constant `PROMPT_VERSION = "explain-v1"` in `ai/contracts.py`
-- Instructions live in `openai_provider.py` (`_INSTRUCTIONS`): use only provided fields; excerpt may not be full document; do not invent unsupported transmission effects
+- Constant `PROMPT_VERSION = "concept-revision-v5"` in `ai/contracts.py`
+- Instructions in `openai_provider.py`: structured bullets, distinct section responsibilities, anti-repetition, analytical application of today's update, minimal meta-disclaimers, mechanism teaching, quality gate
 
 ### Testing
 
-- `tests/test_explanations.py`: fake provider proves single model call then cache; 404/503/502 paths; payload field allow-list; mocked Responses API shape (`store=False`, strict schema); homepage includes explain action
+- `tests/test_explanations.py`: schema/version, optional sections, bullet arrays, normalize clamps, malformed output, quiz index validation, cache, 404/503/502, provider mock, instruction quality asserts, old version isolation, homepage “Revise the concepts” + bullet rendering hooks
+- `tests/test_text.py`: HTML→plain sanitization (footnotes/superscripts and common tags)
 - Suite does **not** call the live OpenAI API
+- Local suite as of structured bullets + HTML sanitization: **76 passed**
 
-### Current limitations (from code/README/brief alignment)
+### Current limitations
 
-- Uses RSS excerpt only; no linked-page scrape, web search, or embeddings
-- No chat UI, no bulk explain, no Daily Macro Brief generation
-- No evaluation harness for hallucination rate yet (brief Phase 5)
+- Uses RSS excerpt for update-specific facts; fundamentals may be broader conceptual knowledge
+- No chat UI, no bulk revise, no Daily Macro Brief generation
+- No evaluation harness for hallucination / pedagogy quality yet
 - Provider swap is interface-ready; only OpenAI implemented
 
 ---
@@ -259,7 +354,7 @@ Triggers: `POST /ingest`, CLI `python -m macro_desk.cli ingest` → `ingest_conf
 - Sequential one GET per feed
 - `parse_rss`: RSS 2.0 `channel/item` → title, link, description, pubDate
 - `parse_pub_date`: email-style dates; naive → UTC
-- HTML description stripped via `domain/text.html_to_text`
+- HTML description/title stripped via `domain/text.html_to_text` / `sanitize_plain_text` (footnote `<sup>`/`<sub>` content dropped for product plain text)
 
 ### Document storage (`documents`)
 
@@ -304,7 +399,8 @@ Tests collected under `tests/` (approximate counts from modules):
 | `test_changes.py` | First-seen window; ingest run recording |
 | `test_api.py` | Health, filters (`category`, `document_type`, `importance`), ingest with injected feed |
 | `test_home.py` | Empty state; lists first-seen items; speeches; high before newer low |
-| `test_explanations.py` | Cache, errors, provider contract, homepage affordance |
+| `test_explanations.py` | Cache, errors, provider contract, structured bullets/sections, homepage affordance |
+| `test_text.py` | HTML→plain sanitization for titles/excerpts |
 
 Conventions:
 
@@ -312,7 +408,7 @@ Conventions:
 - No live network in tests
 - Explanation tests inject a fake provider or monkeypatch `OpenAI`
 
-**To verify:** exact pytest pass count on a clean CI runner (local collection historically ~59 tests as of tip `758f77b`).
+**To verify:** exact pytest pass count on a clean CI runner (local collection historically **76 passed** after structured bullets + HTML sanitization).
 
 ---
 
@@ -323,8 +419,9 @@ Conventions:
 - Ingest three official RBI RSS feeds into SQLite
 - Deduped storage with classification + importance
 - API: `/health`, `/documents` (filters), `/ingest`, `/changes`, `/`, `/documents/{id}/explanation`
-- Homepage: 24h first-seen list, importance ordering, explain expandable note
-- Optional OpenAI explanations with SQLite cache keyed by prompt version
+- Homepage: editorial 24h first-seen list → in-page spiral notebook revision (six-section nav + bullet teaching)
+- Optional OpenAI concept revisions (`concept-revision-v5`) with SQLite cache
+- Title/excerpt HTML sanitization at ingest + read + AI input boundaries
 - CLI ingest
 - Automated tests with mocked feeds/providers
 
@@ -335,15 +432,14 @@ Conventions:
 - Event extraction pipeline beyond keyword category/importance
 - MOSPI / MoF and news tiers
 - Streamlit/React dashboard, Docker, cloud deploy, scheduled ingest job
-- Evaluation set / hallucination metrics
-- Explanation regenerate UX
-- Learning layer / concept glossary UI
+- Evaluation set / hallucination / pedagogy metrics
+- Revision regenerate UX
+- Standalone concept glossary / spaced repetition
 
 ### Known limitations
 
-- Explanations and stored text are RSS-excerpt-bound
+- Update-specific claims are RSS-excerpt-bound; concept teaching may use broader established knowledge
 - Homepage empty when nothing has `created_at` in the last 24 hours (by design)
-- README intro text lags multi-source + AI features
 - Keyword classification/importance can be wrong on ambiguous titles
 - Single-user SQLite assumptions
 
@@ -353,8 +449,8 @@ Conventions:
 
 Only items clearly supported by the brief and current direction (not speculative V2 fluff):
 
-1. **Harden individual explanations** — review quality/grounding before expanding AI surface area (brief: evidence-traceable generation; explanations already defer Daily Brief).
-2. **Daily Macro Brief (structured, source-grounded)** — primary product output in the brief; deferred until per-item explanations are useful.
+1. **Harden concept revisions** — review brevity, grounding, and quiz quality on real daily items before expanding AI surface area.
+2. **Daily Macro Brief (structured, source-grounded)** — primary product output in the brief; still deferred until per-item revisions are consistently useful.
 3. **Embeddings + retrieval** — brief Phase 3; README already names Postgres/vector store as likely later step.
 4. **Scheduled ingestion + deployment** — brief Phase 5 / deployment target (Docker, health, secrets, public URL).
 5. **Evaluation** — brief requires measuring unsupported claims / usefulness; not started in code.

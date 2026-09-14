@@ -10,6 +10,7 @@ from macro_desk.ai.contracts import CachedExplanation, ExplanationDraft
 from macro_desk.domain.classification import classify_document
 from macro_desk.domain.importance import rank_importance
 from macro_desk.domain.models import Document, IngestRun, NewDocument
+from macro_desk.domain.text import sanitize_plain_text
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS documents (
@@ -57,6 +58,7 @@ CREATE TABLE IF NOT EXISTS document_explanations (
     limitation_note TEXT NOT NULL,
     source_url TEXT NOT NULL,
     created_at TEXT NOT NULL,
+    payload TEXT,
     UNIQUE (document_id, prompt_version),
     FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
 );
@@ -97,6 +99,7 @@ def initialize(connection: sqlite3.Connection) -> None:
     connection.executescript(EXPLANATION_SCHEMA)
     _ensure_classification_columns(connection)
     _ensure_importance_columns(connection)
+    _ensure_explanation_payload_column(connection)
     connection.executescript(INDEXES)
     _backfill_classifications(connection)
     _backfill_importance(connection)
@@ -123,6 +126,15 @@ def _ensure_importance_columns(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE documents ADD COLUMN importance_reason TEXT")
 
 
+def _ensure_explanation_payload_column(connection: sqlite3.Connection) -> None:
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(document_explanations)")
+    }
+    if columns and "payload" not in columns:
+        connection.execute("ALTER TABLE document_explanations ADD COLUMN payload TEXT")
+
+
 def _backfill_importance(connection: sqlite3.Connection) -> None:
     rows = connection.execute(
         """
@@ -133,7 +145,10 @@ def _backfill_importance(connection: sqlite3.Connection) -> None:
         """
     ).fetchall()
     for row in rows:
-        result = rank_importance(row["title"], row["clean_text"])
+        result = rank_importance(
+            sanitize_plain_text(row["title"]),
+            sanitize_plain_text(row["clean_text"]),
+        )
         connection.execute(
             """
             UPDATE documents
@@ -154,7 +169,10 @@ def _backfill_classifications(connection: sqlite3.Connection) -> None:
         """
     ).fetchall()
     for row in rows:
-        result = classify_document(row["title"], row["clean_text"])
+        result = classify_document(
+            sanitize_plain_text(row["title"]),
+            sanitize_plain_text(row["clean_text"]),
+        )
         connection.execute(
             """
             UPDATE documents
@@ -173,15 +191,16 @@ def _parse_datetime(value: str) -> datetime:
 
 
 def _row_to_document(row: sqlite3.Row) -> Document:
+    # Sanitize on read so older rows ingested before title HTML cleanup stay clean downstream.
     return Document(
         id=row["id"],
-        title=row["title"],
+        title=sanitize_plain_text(row["title"]),
         published_at=_parse_datetime(row["published_at"]),
         source=row["source"],
         source_url=row["source_url"],
         document_type=row["document_type"],
         raw_text=row["raw_text"],
-        clean_text=row["clean_text"],
+        clean_text=sanitize_plain_text(row["clean_text"]),
         content_hash=row["content_hash"],
         category=row["category"],
         classification_reason=row["classification_reason"],
@@ -192,23 +211,26 @@ def _row_to_document(row: sqlite3.Row) -> Document:
 
 
 def _row_to_explanation(row: sqlite3.Row) -> CachedExplanation:
-    raw_snippets = row["evidence_snippets"]
-    try:
-        snippets = json.loads(raw_snippets) if raw_snippets else []
-    except json.JSONDecodeError:
-        snippets = []
-    if not isinstance(snippets, list):
-        snippets = []
-    return CachedExplanation(
-        document_id=row["document_id"],
-        prompt_version=row["prompt_version"],
-        what_changed=row["what_changed"],
-        why_it_matters=row["why_it_matters"],
-        who_should_care=row["who_should_care"],
-        evidence_snippets=[str(item) for item in snippets],
-        limitation_note=row["limitation_note"],
-        source_url=row["source_url"],
-        cached=False,
+    keys = set(row.keys())
+    raw_payload = row["payload"] if "payload" in keys else None
+    if raw_payload:
+        try:
+            data = json.loads(raw_payload)
+            draft = ExplanationDraft.model_validate(data)
+            return CachedExplanation(
+                document_id=row["document_id"],
+                prompt_version=row["prompt_version"],
+                source_url=row["source_url"],
+                cached=False,
+                **draft.model_dump(),
+            )
+        except (json.JSONDecodeError, ValueError):
+            pass
+    # Legacy explain-v1 rows without payload cannot be mapped into concept-revision fields.
+    raise ValueError(
+        "Stored explanation payload missing or invalid for document_id={}".format(
+            row["document_id"]
+        )
     )
 
 
@@ -408,7 +430,12 @@ class DocumentRepository:
             """,
             (document_id, prompt_version),
         ).fetchone()
-        return _row_to_explanation(row) if row else None
+        if row is None:
+            return None
+        try:
+            return _row_to_explanation(row)
+        except ValueError:
+            return None
 
     def save_explanation(
         self,
@@ -419,25 +446,28 @@ class DocumentRepository:
         created_at: Optional[datetime] = None,
     ) -> CachedExplanation:
         created = created_at or datetime.now(timezone.utc)
+        payload = json.dumps(draft.model_dump(), ensure_ascii=False)
+        # Legacy columns remain NOT NULL; mirror core fields for inspectability.
         try:
             self._connection.execute(
                 """
                 INSERT INTO document_explanations (
                     document_id, prompt_version, what_changed, why_it_matters,
                     who_should_care, evidence_snippets, limitation_note,
-                    source_url, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    source_url, created_at, payload
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     document_id,
                     prompt_version,
-                    draft.what_changed,
-                    draft.why_it_matters,
-                    draft.who_should_care,
-                    json.dumps(draft.evidence_snippets),
+                    "\n".join(draft.what_happened),
+                    "\n".join(draft.why_this_matters),
+                    draft.primary_concept_name,
+                    json.dumps(draft.source_backed_facts),
                     draft.limitation_note,
                     source_url,
                     created.isoformat(),
+                    payload,
                 ),
             )
             self._connection.commit()

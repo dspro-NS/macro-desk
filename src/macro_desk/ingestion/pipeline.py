@@ -11,7 +11,7 @@ from macro_desk.domain.classification import DocumentClassifier, classify_docume
 from macro_desk.domain.hashing import compute_content_hash, normalize_whitespace
 from macro_desk.domain.importance import DocumentImportanceRanker, rank_importance
 from macro_desk.domain.models import NewDocument
-from macro_desk.domain.text import html_to_text
+from macro_desk.domain.text import html_to_text, sanitize_plain_text
 from macro_desk.ingestion.client import FeedClient, FeedFetchError
 from macro_desk.ingestion.rss import parse_pub_date, parse_rss
 from macro_desk.ingestion.sources import FeedSpec, configured_feeds
@@ -158,18 +158,23 @@ def _persist_item(
     classifier: Optional[DocumentClassifier],
     ranker: Optional[DocumentImportanceRanker],
 ) -> None:
-    clean_text = html_to_text(item.raw_text) or normalize_whitespace(item.title)
-    content_hash = compute_content_hash(item.title, clean_text)
+    title = normalize_whitespace(sanitize_plain_text(item.title))
+    if not title:
+        result.failed += 1
+        result.errors.append("{}: missing title after HTML sanitization".format(item.source_url))
+        return
+    clean_text = html_to_text(item.raw_text) or title
+    content_hash = compute_content_hash(title, clean_text)
 
     if repository.exists_by_source_url(item.source_url) or repository.exists_by_content_hash(content_hash):
         result.skipped += 1
         logger.debug("Skipping duplicate %s", item.source_url)
         return
 
-    classification = classify_document(item.title, clean_text, classifier=classifier)
-    importance = rank_importance(item.title, clean_text, ranker=ranker)
+    classification = classify_document(title, clean_text, classifier=classifier)
+    importance = rank_importance(title, clean_text, ranker=ranker)
     document = NewDocument(
-        title=normalize_whitespace(item.title),
+        title=title,
         published_at=parse_pub_date(item.published_at),
         source=feed.source_name,
         source_url=item.source_url,

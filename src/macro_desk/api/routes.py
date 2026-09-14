@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from macro_desk.ai.contracts import ExplanationConfigError, ExplanationProviderError
+from macro_desk.ai.sections import build_revision_sections
 from macro_desk.ai.service import explain_document
 from macro_desk.api.home import render_home
 from macro_desk.db.repository import DocumentRepository, connect, initialize
@@ -79,14 +80,31 @@ class ChangesResponse(BaseModel):
     ingest_runs: List[IngestRunSummary]
 
 
+class RevisionSectionResponse(BaseModel):
+    id: str
+    title: str
+    kind: str
+    bullets: List[str] = Field(default_factory=list)
+    eyebrow: str = ""
+    connections: List[dict] = Field(default_factory=list)
+    quiz: List[dict] = Field(default_factory=list)
+
+
 class ExplanationResponse(BaseModel):
     document_id: int
     prompt_version: str
-    what_changed: str
-    why_it_matters: str
-    who_should_care: str
-    evidence_snippets: List[str]
+    sections: List[RevisionSectionResponse]
+    # Flat fields retained for tests and tooling; UI should prefer ``sections``.
+    what_happened: List[str]
+    primary_concept_name: str
+    primary_concept_explanation: List[str]
+    how_it_works: List[str]
+    related_concepts: List[dict]
+    why_this_matters: List[str]
+    source_backed_facts: List[str]
     limitation_note: str
+    quiz: List[dict]
+    remember_this: List[str]
     source_url: str
     cached: bool
 
@@ -255,23 +273,41 @@ def create_document_explanation(document_id: int, request: Request) -> Explanati
         except ExplanationConfigError:
             raise HTTPException(
                 status_code=503,
-                detail="Explanations are not configured on this desk.",
+                detail="Concept revision is not configured on this desk.",
             )
         except ExplanationProviderError:
             raise HTTPException(
                 status_code=502,
-                detail="The explanation service failed. The original RBI source is unchanged.",
+                detail="Concept revision failed. The original RBI source is unchanged.",
             )
     finally:
         connection.close()
+    sections = build_revision_sections(result)
     return ExplanationResponse(
         document_id=result.document_id,
         prompt_version=result.prompt_version,
-        what_changed=result.what_changed,
-        why_it_matters=result.why_it_matters,
-        who_should_care=result.who_should_care,
-        evidence_snippets=result.evidence_snippets,
+        sections=[
+            RevisionSectionResponse(
+                id=section.id,
+                title=section.title,
+                kind=section.kind,
+                bullets=list(section.bullets),
+                eyebrow=section.eyebrow,
+                connections=[item.model_dump() for item in section.connections],
+                quiz=[item.model_dump() for item in section.quiz],
+            )
+            for section in sections
+        ],
+        what_happened=result.what_happened,
+        primary_concept_name=result.primary_concept_name,
+        primary_concept_explanation=result.primary_concept_explanation,
+        how_it_works=result.how_it_works,
+        related_concepts=[item.model_dump() for item in result.related_concepts],
+        why_this_matters=result.why_this_matters,
+        source_backed_facts=result.source_backed_facts,
         limitation_note=result.limitation_note,
+        quiz=[item.model_dump() for item in result.quiz],
+        remember_this=result.remember_this,
         source_url=result.source_url,
         cached=result.cached,
     )

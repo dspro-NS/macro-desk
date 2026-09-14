@@ -14,6 +14,7 @@ from macro_desk.ai.openai_provider import OpenAIExplanationProvider
 from macro_desk.config import Settings
 from macro_desk.db.repository import DocumentRepository
 from macro_desk.domain.models import Document
+from macro_desk.domain.text import sanitize_plain_text
 
 
 def build_explanation_provider(settings: Settings) -> Optional[ExplanationProvider]:
@@ -25,13 +26,13 @@ def build_explanation_provider(settings: Settings) -> Optional[ExplanationProvid
 
 def item_from_document(document: Document) -> ExplanationItem:
     return ExplanationItem(
-        title=document.title,
+        title=sanitize_plain_text(document.title),
         published_at=document.published_at.date().isoformat(),
         source=document.source,
         category=document.category,
         importance=document.importance,
         source_url=document.source_url,
-        clean_text=document.clean_text,
+        clean_text=sanitize_plain_text(document.clean_text),
     )
 
 

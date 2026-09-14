@@ -8,6 +8,48 @@ from macro_desk.db.repository import DocumentRepository, connect, initialize
 from tests.helpers import make_document
 
 
+def test_home_strips_trailing_hyphen_from_titles(settings: Settings) -> None:
+    connection = connect(settings.database_path)
+    try:
+        initialize(connection)
+        DocumentRepository(connection).insert(
+            make_document(
+                title="Keynote Address, August 19, 2026 -",
+                source_url="https://www.rbi.org.in/scripts/BS_SpeechesView.aspx?Id=trail-hyphen",
+                content_hash="th" + "y" * 62,
+            ),
+            created_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        )
+    finally:
+        connection.close()
+
+    html = TestClient(create_app(settings)).get("/").text
+    assert "Keynote Address, August 19, 2026" in html
+    assert "2026 -" not in html
+    assert "2026-</" not in html
+
+
+def test_home_strips_html_markup_from_titles(settings: Settings) -> None:
+    connection = connect(settings.database_path)
+    try:
+        initialize(connection)
+        DocumentRepository(connection).insert(
+            make_document(
+                title="Getting ready for the next Decade<sup>1</sup> - Keynote",
+                source_url="https://www.rbi.org.in/scripts/BS_SpeechesView.aspx?Id=html-title",
+                content_hash="ht" + "m" * 62,
+            ),
+            created_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        )
+    finally:
+        connection.close()
+
+    html = TestClient(create_app(settings)).get("/").text
+    assert "Getting ready for the next Decade - Keynote" in html
+    assert "<sup>" not in html
+    assert "</sup>" not in html
+
+
 def test_home_shows_empty_state_when_nothing_is_new(settings: Settings) -> None:
     client = TestClient(create_app(settings))
     response = client.get("/")
@@ -49,13 +91,15 @@ def test_home_lists_latest_updates_from_existing_data(settings: Settings) -> Non
     assert response.status_code == 200
     html = response.text
     assert "Minutes of the Monetary Policy Committee Meeting" in html
-    assert "RBI Press Releases" in html
+    assert "Press release" in html
     assert "Monetary Policy" in html
     assert "2026-09-06" in html
     assert "https://www.rbi.org.in/scripts/BS_PressReleaseDisplay.aspx?prid=88" in html
     assert "RBI source" in html
     assert "Should not appear on the homepage" not in html
     assert "Nothing new in the last 24 hours." not in html
+    assert "Good morning" in html
+    assert "Latest updates" in html
 
 
 def test_home_shows_speech_source_and_link(settings: Settings) -> None:
@@ -78,7 +122,7 @@ def test_home_shows_speech_source_and_link(settings: Settings) -> None:
 
     html = TestClient(create_app(settings)).get("/").text
     assert "speech on monetary policy" in html
-    assert "RBI Speeches" in html
+    assert "Speech" in html
     assert "https://www.rbi.org.in/scripts/BS_SpeechesView.aspx?id=1575" in html
     assert "RBI source" in html
 
